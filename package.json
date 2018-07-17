@@ -1,0 +1,19 @@
+{
+  "name": "99-brewing-co-osc-conductor",
+  "version": "1.0.0",
+  "description": "The backend conductor / translator for the Show Systems between the TouchOSC Bartender Application and the Cloud Firestore Database.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/99BrewingCo/OSC-Conductor.git"
+  },
+  "author": "@aramael",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/99BrewingCo/OSC-Conductor/issues"
+  },
+  "homepage": "https://github.com/99BrewingCo/OSC-Conductor#readme"
+}
