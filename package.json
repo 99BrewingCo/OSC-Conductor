@@ -15,5 +15,10 @@
   "bugs": {
     "url": "https://github.com/99BrewingCo/OSC-Conductor/issues"
   },
-  "homepage": "https://github.com/99BrewingCo/OSC-Conductor#readme"
+  "homepage": "https://github.com/99BrewingCo/OSC-Conductor#readme",
+  "dependencies": {
+    "deep-diff": "^1.0.1",
+    "firebase-admin": "^5.13.0",
+    "osc": "^2.2.3"
+  }
 }
