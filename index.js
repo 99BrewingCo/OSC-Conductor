@@ -1,7 +1,9 @@
 const admin = require('firebase-admin');
 var diff = require('deep-diff').diff;
 var game = require('./game.js');
+var osc = require("osc");
 
+// Initalise Firestore Connection
 var serviceAccount = require('./credentials/project-99-firestore.json');
 
 admin.initializeApp({
@@ -9,11 +11,19 @@ admin.initializeApp({
 });
 
 var db = admin.firestore();
+db.settings({timestampsInSnapshots: true});
+
+// Initalise OSC Controller
+var oscController = new osc.UDPPort({
+    localAddress: "0.0.0.0",
+    localPort: 8000,
+    remotePort: 9000,
+    remoteAddress: "192.168.0.8"
+});
 
 var gameBoard = {};
 
 var displayUnsubscribeHandle = db.collection('display').onSnapshot(snapshot => {
-    console.log(snapshot);
     if (snapshot.empty) {
         console.error('No display document changes found.');
     } else {
@@ -25,7 +35,26 @@ var displayUnsubscribeHandle = db.collection('display').onSnapshot(snapshot => {
 
         // Determine Differences
         let differences = diff(gameBoard, gameBoardSnapshot);
-        console.log(differences);
+        differences.forEach(difference => {
+            if (difference.kind == 'N'){
+                if (difference.rhs.display.empty){
+                    game.sendEmptyBottleStatus(oscController, difference.rhs.number);
+                } else {
+                    game.clearEmptyBottleStatus(oscController, difference.rhs.number);
+                }
+            } else if (difference.kind == 'E'){
+                // [ '99', 'display', 'empty' ]
+                if (difference.path.includes('display', 'empty')){
+                    if (difference.rhs){
+                        game.sendEmptyBottleStatus(oscController, difference.path[0]);
+                    } else {
+                        game.clearEmptyBottleStatus(oscController, difference.path[0]);
+                    }
+                }
+            } else {
+                console.log(difference);
+            }
+        });
 
         gameBoard = gameBoardSnapshot;
     }
@@ -33,12 +62,34 @@ var displayUnsubscribeHandle = db.collection('display').onSnapshot(snapshot => {
     console.log('Error getting documents', err);
 });
 
+oscController.open();
+oscController.on("message", function(message, timetag, info) {
+    if (message.address == '/bottle/next/' && message.args[0] == 1){
+        game.startBottlePour(db);
+    } else if (message.address == '/bottle/cancel/' && message.args[0] == 1){
+        game.cancelBottlePour(db);
+    } else if (message.address.indexOf('/bottle/trigger') > -1){
+        let bottleId = message.address.split('/')[3];
+        if (bottleId >= 1 && bottleId <= 99){
+            game.triggerBottleEffect(bottleId);
+        } else {
+            console.error(`----> Error: Incorrect Index. Recieved Effect Trigger on Bottle with index <${bottleId}>.`);
+        }
+    } else {
+        console.log(message); 
+    }
+});
+
 process.on('SIGINT', function() {
+
     console.log("\nUnsubscribing from Display Game Board Updates.");
-    displayUnsubscribeHandle();
+    // displayUnsubscribeHandle();
 
     console.log("Closing connection to Firebase Cloud Firestore Database.");
     admin.app().delete();
+
+    // console.log("Closing OSC Socket Collection");
+    // socket.close();
 
     console.log("Exiting conductor application.");
     process.exit();
