@@ -18,6 +18,7 @@
   "homepage": "https://github.com/99BrewingCo/OSC-Conductor#readme",
   "dependencies": {
     "deep-diff": "^1.0.1",
+    "delay": "^3.0.0",
     "firebase-admin": "^5.13.0",
     "osc": "^2.2.3"
   }
