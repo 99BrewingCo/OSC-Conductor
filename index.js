@@ -107,6 +107,43 @@ var displayUnsubscribeHandle = db.collection('display').onSnapshot(snapshot => {
     console.log('Error getting documents', err);
 });
 
+var gameMeta = {};
+
+var countUnsubscribeHandle = db.collection('count').onSnapshot(snapshot => {
+    if (snapshot.empty) {
+        console.error('No count document changes found.');
+    } else {
+        // Assemble Snapshot from Query
+        let gameMetaSnapshot = {};
+        snapshot.forEach(function (docSnapshot) {
+            gameMetaSnapshot[docSnapshot.id] = docSnapshot.data();
+        });
+
+        // Determine Differences
+        let differences = diff(gameMeta, gameMetaSnapshot);
+        differences.forEach(difference => {
+            if (difference.kind == 'N'){
+                // Game Round
+                if (difference.rhs.game){
+                    game.updateRound(oscController, difference.rhs.game);
+                }
+            } else if (difference.kind == 'E'){
+                if (difference.path.includes('game')){
+                    if (difference.rhs){
+                        game.updateRound(oscController, difference.rhs);
+                    }
+                }
+            } else {
+                console.log(difference);
+            }
+        });
+
+        gameMeta = gameMetaSnapshot;
+    }
+}, (error) => {
+    console.log('Error getting documents', err);
+});
+
 oscController.open();
 oscController.on("message", function(message, timetag, info) {
     if (message.address == '/bottle/next/' && message.args[0] == 1){
@@ -128,7 +165,10 @@ oscController.on("message", function(message, timetag, info) {
 process.on('SIGINT', function() {
 
     console.log("\nUnsubscribing from Display Game Board Updates.");
-    // displayUnsubscribeHandle();
+    displayUnsubscribeHandle();
+
+    console.log("Unsubscribing from Game Meta Updates.");
+    countUnsubscribeHandle();
 
     console.log("Closing connection to Firebase Cloud Firestore Database.");
     admin.app().delete();

@@ -187,3 +187,11 @@ exports.clearEmptyBottleStatus = function(oscClient, bottleId){
     console.log(`      Clearing Empy Bottle Status for Bottle ${bottleId}`);
     return sendLedStatus(oscClient, `/bottle/status/${bottleId}`, false);
 }
+
+/**
+ * Round Mechanics
+ */
+exports.updateRound = function(oscClient, round){
+    [1,2,3,4,5,6].forEach(round => sendLedStatus(oscClient, `/round/${round}`, false));
+    sendLedStatus(oscClient, `/round/${round}`, true);
+}
