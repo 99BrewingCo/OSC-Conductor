@@ -107,7 +107,7 @@ exports.cancelBottlePour = function (db){
                 });
 
                 // Delete Beer Record
-                transaction.delete(removed.ref);
+                transaction.delete(removed.beer);
            }
         });
     }).catch(function(error) {
@@ -119,6 +119,9 @@ exports.triggerBottleEffect = function (bottleId){
     console.log(`----> Trigger Effect on Bottle ${bottleId}`);
 }
 
+/**
+ * Basic Bottle Logic
+ */
 function sendLedStatus(oscClient, address, value){
     return oscClient.send({
         address: address,
