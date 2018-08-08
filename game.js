@@ -1,3 +1,5 @@
+var FieldValue = require('firebase-admin').firestore.FieldValue;
+
 /**
  *  Reset's The Game Board
  */
@@ -11,25 +13,14 @@ exports.resetGameBoard = function (db){
                 return;
             }
 
-            transaction.update(currentCountRef, { count: 100 });
+            transaction.update(currentCountRef, {game: 1, count: 100, inProgress: [], namePending: []});
 
             for (var i = 99; i > 0; i--) {
-                transaction.update(db.collection('display').doc(i.toString()), {
-                    display: {
-                        empty: false,
-                        inProgress: false,
-                        name: false
-                    },
-                    name:{
-                        display: '',
-                        first: '',
-                        last: ''
-                    },
+                transaction.set(db.collection('display').doc(i.toString()), {
                     number: i.toString(),
-                    skin:{
-                        color: 'black',
-                        override: ''
-                    }
+                    event: {empty: false, animationComplete: false, name: false},
+                    name:{display: '', first: '', last: ''},
+                    skin:{color: 'black', override: ''}
                 });
             }
         });
@@ -42,11 +33,8 @@ exports.startBottlePour = function (db){
     console.log("----> Start Beer Pouring");
     return db.runTransaction(function(transaction) {
         var currentRef = db.collection("count").doc("current");
-        // This code may get re-run multiple times if there are conflicts.
         return transaction.get(currentRef).then(function(current) {
-            if (!current.exists) {
-                return;
-            }
+            if (!current.exists) return;
 
             // Update Count
             let data = current.data();
@@ -54,9 +42,11 @@ exports.startBottlePour = function (db){
 
             if (newCount > 0){
 
-                data.inProgress.push(newCount);
-                data.namePending.push(newCount);
-                
+                let beerRef= db.collection('beers').doc();
+
+                data.inProgress.push({id: newCount, beer: beerRef});
+                data.namePending.push({id: newCount, beer: beerRef});
+
                 transaction.update(currentRef, {
                     count: newCount, // Update Current Count
                     inProgress: data.inProgress, // Add to in progress tracker
@@ -64,12 +54,22 @@ exports.startBottlePour = function (db){
                 });
 
                 // Update Bottle Display
-                var newBottleRef = db.collection("display").doc(newCount.toString());
-                transaction.update(newBottleRef, { "display.empty": true, "display.inProgress": true });
+                transaction.update(db.collection("display").doc(newCount.toString()), {
+                    "event.empty": true
+                });
 
-                return true;               
+                // Create New Bottle
+                transaction.set(beerRef, {
+                    display: {game: data.game, bottle: newCount},
+                    beer: {brewer:'', id: null, name: ''},
+                    events: {bottle: true, name: false, tracker: false},
+                    name: {first: '', last: ''},
+                    payment: {timestamp: null, transaction: ''},
+                    timestamp: FieldValue.serverTimestamp()
+                });
+                return true;
             } else {
-                return -1; // return exports.resetGameBoard(db);
+                return -1;
             }
         });
     }).then(function(data) {
@@ -89,23 +89,25 @@ exports.cancelBottlePour = function (db){
         var currentRef = db.collection("count").doc("current");
         // This code may get re-run multiple times if there are conflicts.
         return transaction.get(currentRef).then(function(current) {
-            if (!current.exists) {
-                return;
-            }
+            if (!current.exists) return;
 
             let data = current.data();
             if (data.inProgress.length > 0){
                 let removed = data.inProgress.pop();
-                
+
                 transaction.update(currentRef, {
                     count: data.count + 1, // Update Current Count
                     inProgress: data.inProgress, // Add to in progress tracker
-                    namePending: data.namePending.filter(bottle => bottle !== removed) // Add to name pending tracker
+                    namePending: data.namePending.filter(bottle => bottle.id !== removed.id) // Add to name pending tracker
                 });
 
                 // Update Bottle Display
-                var cancelledBottleRef = db.collection("display").doc(removed.toString());
-                transaction.update(cancelledBottleRef, { "display.empty": false, "display.inProgress": false });
+                transaction.update(db.collection("display").doc(removed.id.toString()), {
+                    "event.empty": false
+                });
+
+                // Delete Beer Record
+                transaction.delete(removed.ref);
            }
         });
     }).catch(function(error) {
@@ -125,7 +127,7 @@ function sendLedStatus(oscClient, address, value){
                 type: "f",
                 value: value ? 1.0 : 0.0
             }
-        ] 
+        ]
     });
 }
 
@@ -150,10 +152,6 @@ exports.clearNameStatus = function(oscClient, bottleId){
 }
 
 exports.sendName = function(oscClient, bottleId, name){
-
-    // Send Name Status
-    exports.sendNameStatus(oscClient, bottleId);
-
     return oscClient.send({
         address: `/bottle/name/${bottleId}`,
         args: [
@@ -161,7 +159,7 @@ exports.sendName = function(oscClient, bottleId, name){
                 type: "s",
                 value: name
             }
-        ] 
+        ]
     });
 }
 
@@ -173,7 +171,7 @@ exports.clearName = function(oscClient, bottleId){
                 type: "s",
                 value: ""
             }
-        ] 
+        ]
     });
 }
 

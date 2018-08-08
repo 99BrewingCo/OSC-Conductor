@@ -37,18 +37,63 @@ var displayUnsubscribeHandle = db.collection('display').onSnapshot(snapshot => {
         let differences = diff(gameBoard, gameBoardSnapshot);
         differences.forEach(difference => {
             if (difference.kind == 'N'){
-                if (difference.rhs.display.empty){
+                // Event > Empty
+                if (difference.rhs.event.empty){
                     game.sendEmptyBottleStatus(oscController, difference.rhs.number);
                 } else {
                     game.clearEmptyBottleStatus(oscController, difference.rhs.number);
                 }
+
+                // Event > Animation Complete
+                if (difference.rhs.event.animationComplete){
+                    game.sendAnimationCompleteStatus(oscController, difference.rhs.number);
+                } else {
+                    game.clearAnimationCompleteStatus(oscController, difference.rhs.number);
+                }
+
+                // Event > Name
+                if (difference.rhs.event.name){
+                    game.sendNameStatus(oscController, difference.rhs.number);
+                } else {
+                    game.clearNameStatus(oscController, difference.rhs.number);
+                }
+
+                // Display Name
+                if (difference.rhs.name.display){
+                    game.sendName(oscController, difference.rhs.number, difference.rhs.name.display);
+                } else {
+                    game.clearName(oscController, difference.rhs.number);
+                }
             } else if (difference.kind == 'E'){
-                // [ '99', 'display', 'empty' ]
-                if (difference.path.includes('display', 'empty')){
+                if (['event', 'empty'].every(path => difference.path.includes(path))){
                     if (difference.rhs){
                         game.sendEmptyBottleStatus(oscController, difference.path[0]);
                     } else {
                         game.clearEmptyBottleStatus(oscController, difference.path[0]);
+                    }
+                }
+
+                if (['event', 'animationComplete'].every(path => difference.path.includes(path))){
+                    if (difference.rhs){
+                        game.sendAnimationCompleteStatus(oscController, difference.path[0]);
+                    } else {
+                        game.clearAnimationCompleteStatus(oscController, difference.path[0]);
+                    }
+                }
+
+                if (['event', 'name'].every(path => difference.path.includes(path))){
+                    if (difference.rhs){
+                        game.sendNameStatus(oscController, difference.path[0]);
+                    } else {
+                        game.clearNameStatus(oscController, difference.path[0]);
+                    }
+                }
+
+                if (['name', 'display'].every(path => difference.path.includes(path))){
+                    if (difference.rhs){
+                        game.sendName(oscController, difference.path[0], difference.rhs);
+                    } else {
+                        game.clearName(oscController, difference.path[0]);
                     }
                 }
             } else {
@@ -76,7 +121,7 @@ oscController.on("message", function(message, timetag, info) {
             console.error(`----> Error: Incorrect Index. Recieved Effect Trigger on Bottle with index <${bottleId}>.`);
         }
     } else {
-        console.log(message); 
+        console.log(message);
     }
 });
 
