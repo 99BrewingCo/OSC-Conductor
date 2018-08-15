@@ -127,11 +127,24 @@ var countUnsubscribeHandle = db.collection('count').onSnapshot(snapshot => {
                 if (difference.rhs.game){
                     game.updateRound(oscController, difference.rhs.game);
                 }
+
+                if (difference.rhs['0'] || difference.rhs['1'] || difference.rhs['2'] || difference.rhs['3']){
+                    ['0', '1', '2', '3', '4'].forEach(y => {
+                        if(difference.rhs[y]){
+                            difference.rhs[y].forEach((player, x) => {
+                                game.sendConnect4BottleStatus(oscController, player, x, y);
+                            });
+                        }
+                    });
+                }
             } else if (difference.kind == 'E'){
-                if (difference.path.includes('game')){
+                if (['current', 'game'].every(path => difference.path.includes(path))){
                     if (difference.rhs){
                         game.updateRound(oscController, difference.rhs);
                     }
+                }
+                if (difference.path[0] === 'connect4' && ['0', '1', '2', '3', '4'].some(path => difference.path.includes(path))){
+                    game.sendConnect4BottleStatus(oscController, difference.rhs, difference.path[2], difference.path[1]);
                 }
             } else {
                 console.log(difference);
@@ -156,6 +169,13 @@ oscController.on("message", function(message, timetag, info) {
             game.triggerBottleEffect(bottleId);
         } else {
             console.error(`----> Error: Incorrect Index. Recieved Effect Trigger on Bottle with index <${bottleId}>.`);
+        }
+    }  else if (message.address.indexOf('/column/trigger') > -1){
+        let columnId = message.address.split('/')[3];
+        if (columnId >= 0 && columnId <= 19){
+            game.triggerColumnMove(db, columnId);
+        } else {
+            console.error(`----> Error: Incorrect Index. Recieved Effect Trigger on Bottle with index <${columnId}>.`);
         }
     } else {
         console.log(message);

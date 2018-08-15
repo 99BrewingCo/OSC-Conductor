@@ -1,3 +1,5 @@
+var connect4 = require('./connect4.js');
+
 var FieldValue = require('firebase-admin').firestore.FieldValue;
 
 /**
@@ -21,6 +23,20 @@ exports.resetGameBoard = function (db){
                     event: {empty: false, animationComplete: false, name: false},
                     name:{display: '', first: '', last: ''},
                     skin:{color: 'black', override: ''}
+                });
+            }
+
+            // Connect 4 Game Board Reset
+            if (true){
+                transaction.set(db.collection('count').doc('connect4'), {
+                    0: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+                    1: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+                    2: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+                    3: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+                    4: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+                    countToWin: 4,
+                    currentPlayer: "blue",
+                    wins: {blue: 0, red: 0}
                 });
             }
         });
@@ -194,4 +210,72 @@ exports.clearEmptyBottleStatus = function(oscClient, bottleId){
 exports.updateRound = function(oscClient, round){
     [1,2,3,4,5,6].forEach(round => sendLedStatus(oscClient, `/round/${round}`, false));
     sendLedStatus(oscClient, `/round/${round}`, true);
+}
+
+/**
+ * Connect 4 Game Play
+ */
+exports.triggerColumnMove = function(db, x_pos){
+    return db.runTransaction(function(transaction) {
+        var connect4Ref = db.collection("count").doc("connect4");
+        // This code may get re-run multiple times if there are conflicts.
+        return transaction.get(connect4Ref).then(function(connect4Data) {
+            if (!connect4Data.exists) {
+                return;
+            }
+
+            let data = connect4Data.data();
+            let board = [data['0'], data['1'], data['2'], data['3'], data['4']];
+
+            let y_pos = connect4.dropToBottom(board, x_pos);
+            board[y_pos][x_pos] = data.currentPlayer;
+
+            // Check for Win
+            gameWon = connect4.horizontalWin(board, data['countToWin']) || connect4.verticalWin(board, data['countToWin']) || connect4.diagonalWin(board, data['countToWin']);
+
+
+            console.log(`----> Drop Token for ${data.currentPlayer} at row ${y_pos}, column ${x_pos}`);
+
+            // Database Update
+            let gameTransactionUpdate = {};
+            if (gameWon){
+                data['wins'][gameWon]++;
+
+                gameTransactionUpdate = {
+                    0: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+                    1: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+                    2: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+                    3: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+                    4: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+                    wins: data['wins']
+                };
+            } else {
+                gameTransactionUpdate = { 0: board[0], 1: board[1], 2: board[2], 3: board[3], 4: board[4] }
+            }
+
+            gameTransactionUpdate = Object.assign(gameTransactionUpdate, {
+                currentPlayer: (data.currentPlayer === "red") ? "blue" : "red"
+            });
+
+            transaction.update(db.collection('count').doc('connect4'), gameTransactionUpdate);
+
+
+            // Most Recent Player Wins
+        });
+    }).catch(function(error) {
+        console.error("Transaction failed: ", error);
+    });
+}
+
+exports.sendConnect4BottleStatus = function(oscClient, player, x_pos, y_pos){
+    let bottleId = 100 - (y_pos*20 + x_pos);
+
+    if (player === null){
+        console.log(`      Clearing Bottle at row ${x_pos}, column ${y_pos} at bottle ${bottleId}`);
+        sendLedStatus(oscClient, `/bottle/red/${bottleId}`, false);
+        sendLedStatus(oscClient, `/bottle/blue/${bottleId}`, false);
+    } else {
+        console.log(`      Setting a ${player} for Bottle at row ${x_pos}, column ${y_pos} at bottle ${bottleId}`);
+        return sendLedStatus(oscClient, `/bottle/${player}/${bottleId}`, true);
+    }
 }
