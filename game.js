@@ -36,6 +36,7 @@ exports.resetGameBoard = function (db){
                     4: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
                     countToWin: 4,
                     currentPlayer: "blue",
+                    archived: [],
                     wins: {blue: 0, red: 0}
                 });
             }
@@ -240,6 +241,7 @@ exports.triggerColumnMove = function(db, x_pos){
             let gameTransactionUpdate = {};
             if (gameWon){
                 data['wins'][gameWon]++;
+                data['archived'].push({board: JSON.stringify(board), timestamp: new Date()});
 
                 gameTransactionUpdate = {
                     0: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
@@ -247,8 +249,10 @@ exports.triggerColumnMove = function(db, x_pos){
                     2: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
                     3: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
                     4: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
-                    wins: data['wins']
+                    wins: data['wins'],
+                    archived: data['archived']
                 };
+
             } else {
                 gameTransactionUpdate = { 0: board[0], 1: board[1], 2: board[2], 3: board[3], 4: board[4] }
             }
@@ -258,9 +262,6 @@ exports.triggerColumnMove = function(db, x_pos){
             });
 
             transaction.update(db.collection('count').doc('connect4'), gameTransactionUpdate);
-
-
-            // Most Recent Player Wins
         });
     }).catch(function(error) {
         console.error("Transaction failed: ", error);
