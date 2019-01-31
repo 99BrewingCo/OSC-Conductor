@@ -11,7 +11,7 @@ admin.initializeApp({
 var db = admin.firestore();
 db.settings({timestampsInSnapshots: true});
 
-game.resetGameBoard(db).then(function (){
+game.resetGameBoard(db, true).then(function (){
     console.log("Closing connection to Firebase Cloud Firestore Database.");
     admin.app().delete();
 

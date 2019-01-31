@@ -5,7 +5,7 @@ var FieldValue = require('firebase-admin').firestore.FieldValue;
 /**
  *  Reset's The Game Board
  */
-exports.resetGameBoard = function (db){
+exports.resetGameBoard = function (db, force = false){
     console.log("----> Reset Game Board");
     return db.runTransaction(function(transaction) {
         var currentCountRef = db.collection("count").doc("current");
@@ -15,20 +15,38 @@ exports.resetGameBoard = function (db){
                 return;
             }
 
-            transaction.update(currentCountRef, {game: 1, count: 100, inProgress: [], namePending: []});
+            let currentCountUpdate = {count: 100, inProgress: [], namePending: []};
+            if (force){
+                currentCountUpdate = Object.assign(currentCountUpdate, {
+                    game: "basic", round: "0", 
+                });
+            }
+
+            transaction.update(currentCountRef, currentCountUpdate);
+
+            // Fetch New Round Skin Color
+            let currentCountData = currentCount.data();
+            let currentSkin = "#eed202"; // critical error color
+            if (currentCountData.schedule[currentCountData.round] !== undefined){
+                let currentRound = parseInt(currentCountData.round);
+                // Correct for Forcing Full Game Reset
+                currentRound = force ? 0 : currentRound;
+                currentSkin = currentCountData.schedule[currentRound].skin;
+            }
 
             for (var i = 99; i > 0; i--) {
                 transaction.set(db.collection('display').doc(i.toString()), {
                     number: i.toString(),
-                    event: {empty: false, animationComplete: false, name: false},
+                    event: {empty: false, animationComplete: false, name: false, override: false},
                     name:{display: '', first: '', last: ''},
-                    skin:{color: 'black', override: ''}
+                    skin:{color: currentSkin, override: ''}
                 });
             }
 
             // Connect 4 Game Board Reset
-            if (true){
+            if (force){
                 transaction.set(db.collection('count').doc('connect4'), {
+                    game: 'connect4',
                     0: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
                     1: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
                     2: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
@@ -38,6 +56,24 @@ exports.resetGameBoard = function (db){
                     currentPlayer: "blue",
                     archived: [],
                     wins: {blue: 0, red: 0}
+                });
+            }
+
+            // Tic-Tac-Toe Game Board Reset
+            if (force){
+                transaction.set(db.collection('count').doc('tictactoe'), {
+                    game: 'tictactoe',
+                    0: [null, null, null],
+                    1: [null, null, null],
+                    2: [null, null, null],
+                    M0: [null, null, null],
+                    M1: [null, null, null],
+                    M2: [null, null, null],
+                    mPos: {x: 0, y: 0},
+                    countToWin: 3,
+                    currentPlayer: "x",
+                    archived: [],
+                    wins: {x: 0, o: 0}
                 });
             }
         });
@@ -209,13 +245,49 @@ exports.clearEmptyBottleStatus = function(oscClient, bottleId){
  * Round Mechanics
  */
 exports.updateRound = function(oscClient, round){
+    console.log(`----> Updating Round to '${round}'`);
     [1,2,3,4,5,6].forEach(round => sendLedStatus(oscClient, `/round/${round}`, false));
     sendLedStatus(oscClient, `/round/${round}`, true);
+}
+
+exports.switchToUI = function(oscClient, currentGame){
+    if (currentGame == 'basic'){
+        game.switchToBasicUI(oscController);
+    } else if (currentGame == 'connect4'){
+        game.switchToConnect4UI(oscController);
+    } else if (currentGame == 'tictactoe'){
+        game.switchToTicTacToeUI(oscController);
+    }
+}
+
+exports.switchToBasicUI = function(oscClient){
+    return oscClient.send({
+        address: `/Project 99 Status`,
+    });
+}
+
+exports.switchToConnect4UI = function(oscClient){
+    return oscClient.send({
+        address: `/2`,
+    });
+}
+
+exports.switchToTicTacToeUI = function(oscClient){
+    return oscClient.send({
+        address: `/4`,
+    });
 }
 
 /**
  * Connect 4 Game Play
  */
+
+let getConnect4BottleId = function(x_pos, y_pos){
+    x_pos = parseInt(x_pos);
+    y_pos = parseInt(y_pos);
+    return 100 - (y_pos*20 + x_pos);
+}
+
 exports.triggerColumnMove = function(db, x_pos){
     return db.runTransaction(function(transaction) {
         var connect4Ref = db.collection("count").doc("connect4");
@@ -225,43 +297,67 @@ exports.triggerColumnMove = function(db, x_pos){
                 return;
             }
 
-            let data = connect4Data.data();
-            let board = [data['0'], data['1'], data['2'], data['3'], data['4']];
+            return transaction.get(db.collection("display").where("event.override", "==", true).select()).then(function(displayData){
+                if (displayData.empty) {
+                    console.log('No matching documents.');
+                    return;
+                }
 
-            let y_pos = connect4.dropToBottom(board, x_pos);
-            board[y_pos][x_pos] = data.currentPlayer;
+                let currentDisplayIds = []; 
+                displayData.forEach(doc => currentDisplayIds.push(doc.id));
 
-            // Check for Win
-            gameWon = connect4.horizontalWin(board, data['countToWin']) || connect4.verticalWin(board, data['countToWin']) || connect4.diagonalWin(board, data['countToWin']);
+                let data = connect4Data.data();
+                let board = [data['0'], data['1'], data['2'], data['3'], data['4']];
+
+                let y_pos = connect4.dropToBottom(board, x_pos);
+                board[y_pos][x_pos] = data.currentPlayer;
+
+                // Check for Win
+                gameWon = connect4.horizontalWin(board, data['countToWin']) || connect4.verticalWin(board, data['countToWin']) || connect4.diagonalWin(board, data['countToWin']);
+
+                console.log(`----> Drop Token for ${data.currentPlayer} at row ${y_pos}, column ${x_pos}`);
+
+                // Database Update
+                let gameTransactionUpdate = {};
+                if (gameWon){
+                    data['wins'][gameWon]++;
+                    data['archived'].push({board: JSON.stringify(board), timestamp: new Date()});
+
+                    gameTransactionUpdate = {
+                        0: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+                        1: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+                        2: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+                        3: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+                        4: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+                        wins: data['wins'],
+                        archived: data['archived']
+                    };
+
+                    let displayRef = db.collection("display");
+                    currentDisplayIds.forEach(function(bottleId){
+                        transaction.update(displayRef.doc(bottleId.toString()), {
+                            "event.override": false,
+                            "skin.override": ""
+                        });
+                    })
 
 
-            console.log(`----> Drop Token for ${data.currentPlayer} at row ${y_pos}, column ${x_pos}`);
+                } else {
+                    gameTransactionUpdate = { 0: board[0], 1: board[1], 2: board[2], 3: board[3], 4: board[4] };
 
-            // Database Update
-            let gameTransactionUpdate = {};
-            if (gameWon){
-                data['wins'][gameWon]++;
-                data['archived'].push({board: JSON.stringify(board), timestamp: new Date()});
+                    let bottleId = getConnect4BottleId(x_pos, y_pos);
+                    transaction.update(db.collection("display").doc(bottleId.toString()), {
+                        "event.override": true,
+                        "skin.override": data.currentPlayer
+                    });
+                }
 
-                gameTransactionUpdate = {
-                    0: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
-                    1: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
-                    2: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
-                    3: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
-                    4: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
-                    wins: data['wins'],
-                    archived: data['archived']
-                };
+                gameTransactionUpdate = Object.assign(gameTransactionUpdate, {
+                    currentPlayer: (data.currentPlayer === "red") ? "blue" : "red"
+                });
 
-            } else {
-                gameTransactionUpdate = { 0: board[0], 1: board[1], 2: board[2], 3: board[3], 4: board[4] }
-            }
-
-            gameTransactionUpdate = Object.assign(gameTransactionUpdate, {
-                currentPlayer: (data.currentPlayer === "red") ? "blue" : "red"
+                transaction.update(connect4Ref, gameTransactionUpdate);
             });
-
-            transaction.update(db.collection('count').doc('connect4'), gameTransactionUpdate);
         });
     }).catch(function(error) {
         console.error("Transaction failed: ", error);
@@ -269,14 +365,102 @@ exports.triggerColumnMove = function(db, x_pos){
 }
 
 exports.sendConnect4BottleStatus = function(oscClient, player, x_pos, y_pos){
-    let bottleId = 100 - (y_pos*20 + x_pos);
+    let bottleId = getConnect4BottleId(x_pos, y_pos);
 
     if (player === null){
-        console.log(`      Clearing Bottle at row ${x_pos}, column ${y_pos} at bottle ${bottleId}`);
+        console.log(`      Clearing Connect 4 Bottle at row ${x_pos}, column ${y_pos} at bottle ${bottleId}`);
         sendLedStatus(oscClient, `/bottle/red/${bottleId}`, false);
         sendLedStatus(oscClient, `/bottle/blue/${bottleId}`, false);
     } else {
-        console.log(`      Setting a ${player} for Bottle at row ${x_pos}, column ${y_pos} at bottle ${bottleId}`);
+        console.log(`      Setting a Connect 4 move for player ${player} for Bottle at row ${x_pos}, column ${y_pos} at bottle ${bottleId}`);
         return sendLedStatus(oscClient, `/bottle/${player}/${bottleId}`, true);
+    }
+}
+
+/**
+ * Tic Tac Toe Game Play
+ */
+
+exports.triggerTicTacToeMove = function(db, x_pos, y_pos){
+    return db.runTransaction(function(transaction) {
+        var tictactoeRef = db.collection('count').doc('tictactoe');
+        // This code may get re-run multiple times if there are conflicts.
+        return transaction.get(tictactoeRef).then(function(tictactoeData) {
+            if (!tictactoeData.exists) {
+                return;
+            }
+
+            let data = tictactoeData.data();
+            let board = [data['0'], data['1'], data['2']];
+
+            board[y_pos][x_pos] = data.currentPlayer;
+
+            // Check for Win
+            gameWon = connect4.horizontalWin(board, data.countToWin) || connect4.verticalWin(board, data.countToWin) || connect4.diagonalWin(board, data.countToWin);
+
+            console.log(`----> ${data.currentPlayer} placed a move at row ${y_pos}, column ${x_pos}`);
+
+            // Database Update
+            let gameTransactionUpdate = {};
+            if (gameWon){
+                data.wins[gameWon]++;
+                data.archived.push({board: JSON.stringify(board), timestamp: new Date()});
+
+                gameTransactionUpdate = {
+                    0: [null, null, null],
+                    1: [null, null, null],
+                    2: [null, null, null],
+                    wins: data.wins,
+                    archived: data.archived
+                };
+            } else if (connect4.gameIsDraw(board)) {
+                console.log('game is a draw');
+
+                data.archived.push({board: JSON.stringify(board), timestamp: new Date()});
+                gameTransactionUpdate = {
+                    0: [null, null, null],
+                    1: [null, null, null],
+                    2: [null, null, null],
+                    archived: data.archived
+                };
+            } else {
+                gameTransactionUpdate = { 0: board[0], 1: board[1], 2: board[2] }
+            }
+
+            gameTransactionUpdate = Object.assign(gameTransactionUpdate, {
+                currentPlayer: (data.currentPlayer === "x") ? "o" : "x"
+            });
+
+            transaction.update(tictactoeRef, gameTransactionUpdate);
+
+        });
+    }).catch(function(error) {
+        console.error("Transaction failed: ", error);
+    });
+}
+
+exports.sendTicTacToeBottleStatus = function(oscClient, player, x_pos, y_pos, game = "current"){
+    if (player === null){
+        console.log(`      Clearing Tic-Tac-Toe Bottle at row ${x_pos}, column ${y_pos}`);
+        return oscClient.send({
+        address: `/ttt/${game}/status/${y_pos}/${x_pos}`,
+        args: [
+            {
+                type: "s",
+                value: ' '
+            }
+        ]
+    });
+    } else {
+        console.log(`      Setting a Tic-Tac-Toe move for player ${player} for Bottle at row ${x_pos}, column ${y_pos}`);
+        return oscClient.send({
+        address: `/ttt/${game}/status/${y_pos}/${x_pos}`,
+        args: [
+            {
+                type: "s",
+                value: player
+            }
+        ]
+    });
     }
 }

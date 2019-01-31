@@ -18,7 +18,7 @@ var oscController = new osc.UDPPort({
     localAddress: "0.0.0.0",
     localPort: 8000,
     remotePort: 9000,
-    remoteAddress: "192.168.0.8"
+    remoteAddress: "172.27.7.102"
 });
 
 var gameBoard = {};
@@ -36,34 +36,38 @@ var displayUnsubscribeHandle = db.collection('display').onSnapshot(snapshot => {
         // Determine Differences
         let differences = diff(gameBoard, gameBoardSnapshot);
         differences.forEach(difference => {
+            // Newly Added Property / Element
             if (difference.kind == 'N'){
-                // Event > Empty
-                if (difference.rhs.event.empty){
-                    game.sendEmptyBottleStatus(oscController, difference.rhs.number);
-                } else {
-                    game.clearEmptyBottleStatus(oscController, difference.rhs.number);
-                }
+                if ('event' in difference.rhs){
+                    // Event > Empty
+                    if ('empty' in difference.rhs.event && difference.rhs.event.empty){
+                        game.sendEmptyBottleStatus(oscController, difference.rhs.number);
+                    } else {
+                        game.clearEmptyBottleStatus(oscController, difference.rhs.number);
+                    }
 
-                // Event > Animation Complete
-                if (difference.rhs.event.animationComplete){
-                    game.sendAnimationCompleteStatus(oscController, difference.rhs.number);
-                } else {
-                    game.clearAnimationCompleteStatus(oscController, difference.rhs.number);
-                }
+                    // Event > Animation Complete
+                    if ('animationComplete' in difference.rhs.event && difference.rhs.event.animationComplete){
+                        game.sendAnimationCompleteStatus(oscController, difference.rhs.number);
+                    } else {
+                        game.clearAnimationCompleteStatus(oscController, difference.rhs.number);
+                    }
 
-                // Event > Name
-                if (difference.rhs.event.name){
-                    game.sendNameStatus(oscController, difference.rhs.number);
-                } else {
-                    game.clearNameStatus(oscController, difference.rhs.number);
-                }
+                    // Event > Name
+                    if ('name' in difference.rhs.event && difference.rhs.event.name){
+                        game.sendNameStatus(oscController, difference.rhs.number);
+                    } else {
+                        game.clearNameStatus(oscController, difference.rhs.number);
+                    }
 
-                // Display Name
-                if (difference.rhs.name.display){
-                    game.sendName(oscController, difference.rhs.number, difference.rhs.name.display);
-                } else {
-                    game.clearName(oscController, difference.rhs.number);
+                    // Display Name
+                    if ('display' in difference.rhs.event && difference.rhs.name.display){
+                        game.sendName(oscController, difference.rhs.number, difference.rhs.name.display);
+                    } else {
+                        game.clearName(oscController, difference.rhs.number);
+                    }
                 }
+            // Property / Element Edited
             } else if (difference.kind == 'E'){
                 if (['event', 'empty'].every(path => difference.path.includes(path))){
                     if (difference.rhs){
@@ -96,6 +100,7 @@ var displayUnsubscribeHandle = db.collection('display').onSnapshot(snapshot => {
                         game.clearName(oscController, difference.path[0]);
                     }
                 }
+            // 
             } else {
                 console.log(difference);
             }
@@ -122,29 +127,57 @@ var countUnsubscribeHandle = db.collection('count').onSnapshot(snapshot => {
         // Determine Differences
         let differences = diff(gameMeta, gameMetaSnapshot);
         differences.forEach(difference => {
+            // Newly Added Property / Element
             if (difference.kind == 'N'){
                 // Game Round
-                if (difference.rhs.game){
-                    game.updateRound(oscController, difference.rhs.game);
-                }
+                if (difference.rhs.round){
+                    let round = parseInt(difference.rhs.round);
+                    game.updateRound(oscController, round);
 
+                    // Switch to Correct Page
+                    game.switchToUI(difference.rhs.round[round].game);
+                }
+                
                 if (difference.rhs['0'] || difference.rhs['1'] || difference.rhs['2'] || difference.rhs['3']){
                     ['0', '1', '2', '3', '4'].forEach(y => {
                         if(difference.rhs[y]){
                             difference.rhs[y].forEach((player, x) => {
-                                game.sendConnect4BottleStatus(oscController, player, x, y);
+                                if (difference.rhs.game === 'connect4'){
+                                    game.sendConnect4BottleStatus(oscController, player, x, y);
+                                } else if (difference.rhs.game === 'tictactoe') {
+                                    game.sendTicTacToeBottleStatus(oscController, player, x, y);
+                                } else {
+                                    console.error(`----> Error: Unknown Game`);
+                                }
                             });
                         }
                     });
                 }
+            // Property / Element Edited
             } else if (difference.kind == 'E'){
-                if (['current', 'game'].every(path => difference.path.includes(path))){
+                if (['current', 'round'].every(path => difference.path.includes(path))){
                     if (difference.rhs){
                         game.updateRound(oscController, difference.rhs);
                     }
                 }
+                if (['current', 'game'].every(path => difference.path.includes(path))){
+                    if (difference.rhs){
+                        game.switchToUI(oscController, difference.rhs);
+                    }
+                }
                 if (difference.path[0] === 'connect4' && ['0', '1', '2', '3', '4'].some(path => difference.path.includes(path))){
                     game.sendConnect4BottleStatus(oscController, difference.rhs, difference.path[2], difference.path[1]);
+                }
+                if (difference.path[0] === 'tictactoe' && ['0', '1', '2'].some(path => difference.path.includes(path))){
+                    game.sendTicTacToeBottleStatus(oscController, difference.rhs, difference.path[2], difference.path[1]);
+                }
+            // Property / Element Edited
+            } else if (difference.kind == 'A'){
+                if (['current', 'namePending'].every(path => difference.path.includes(path))){
+                    // pass
+                }
+                if (['current', 'inProgress'].every(path => difference.path.includes(path))){
+                    // pass
                 }
             } else {
                 console.log(difference);
@@ -160,6 +193,7 @@ var countUnsubscribeHandle = db.collection('count').onSnapshot(snapshot => {
 oscController.open();
 oscController.on("message", function(message, timetag, info) {
     if (message.address == '/bottle/next/' && message.args[0] == 1){
+        console.log('something is starting to work');
         game.startBottlePour(db);
     } else if (message.address == '/bottle/cancel/' && message.args[0] == 1){
         game.cancelBottlePour(db);
@@ -174,6 +208,16 @@ oscController.on("message", function(message, timetag, info) {
         let columnId = message.address.split('/')[3];
         if (columnId >= 0 && columnId <= 19){
             game.triggerColumnMove(db, columnId);
+        } else {
+            console.error(`----> Error: Incorrect Index. Recieved Effect Trigger on Bottle with index <${columnId}>.`);
+        }
+    } else if (message.address.indexOf('/ttt/current/trigger/') > -1){
+        let addressSplit = message.address.split('/');
+        let xPos = addressSplit[5];
+        let yPos = addressSplit[4];
+
+        if ((xPos >= 0 && xPos <= 2) && (yPos >= 0 && yPos <= 2)){
+            game.triggerTicTacToeMove(db, xPos, yPos);
         } else {
             console.error(`----> Error: Incorrect Index. Recieved Effect Trigger on Bottle with index <${columnId}>.`);
         }
