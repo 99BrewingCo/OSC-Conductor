@@ -135,7 +135,11 @@ var countUnsubscribeHandle = db.collection('count').onSnapshot(snapshot => {
                     game.updateRound(oscController, round);
 
                     // Switch to Correct Page
-                    game.switchToUI(difference.rhs.round[round].game);
+                    if (difference.rhs.schedule[round] === undefined){
+                        console.error(`----> Error: Unknown Round '${round}'`);
+                    } else {
+                        game.switchToUI(oscController, difference.rhs.schedule[round].game);
+                    }
                 }
                 
                 if (difference.rhs['0'] || difference.rhs['1'] || difference.rhs['2'] || difference.rhs['3']){
