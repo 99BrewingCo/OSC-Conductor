@@ -51,6 +51,7 @@ exports.horizontalWin = function (board, countToWin) {
 
     var currentValue = null,
         previousValue = 0,
+        coordinates = [],
         tally = 0;
 
     // Scan each row in series, tallying the length of each series. If a series
@@ -59,13 +60,19 @@ exports.horizontalWin = function (board, countToWin) {
         for (var x = 0; x <= xMax; x++) {
             currentValue = board[y][x];
             if (currentValue === previousValue && currentValue !== null) {
+                if (tally == 0){
+                    coordinates.push([x-1,y]); // infer previous
+                }
+                coordinates.push([x,y]);
                 tally += 1;
             } else {
                 // Reset the tally if you find a gap.
+                coordinates = [];
                 tally = 0;
             }
             if (tally === countToWin - 1) {
-                return currentValue;
+                console.log('tally:', tally);
+                return {'player':currentValue, 'coordinates':coordinates};
             }
             previousValue = currentValue;
         }
@@ -90,6 +97,7 @@ exports.verticalWin = function (board, countToWin) {
 
     var currentValue = null,
         previousValue = 0,
+        coordinates = [],
         tally = 0;
 
     // Scan each column in series, tallying the length of each series. If a
@@ -98,13 +106,19 @@ exports.verticalWin = function (board, countToWin) {
         for (var y = 0; y <= yMax; y++) {
             currentValue = board[y][x];
             if (currentValue === previousValue && currentValue !== null) {
+                if (tally == 0){
+                    coordinates.push([x,y-1]); // infer previous
+                }
+                coordinates.push([x,y]);
                 tally += 1;
             } else {
                 // Reset the tally if you find a gap.
+                coordinates = [];
                 tally = 0;
             }
             if (tally === countToWin - 1) {
-                return currentValue;
+                console.log('tally:', tally);
+                return {'player':currentValue, 'coordinates':coordinates};
             }
             previousValue = currentValue;
         }
@@ -134,6 +148,7 @@ exports.diagonalWin = function (board, countToWin) {
         ytemp = null,
         currentValue = null,
         previousValue = 0,
+        coordinates = [],
         tally = 0;
 
     // Test for down-right diagonals across the top.
@@ -144,13 +159,18 @@ exports.diagonalWin = function (board, countToWin) {
         while (xtemp <= xMax && ytemp <= yMax) {
             currentValue = board[ytemp][xtemp];
             if (currentValue === previousValue && currentValue !== null) {
+                if (tally == 0){
+                    coordinates.push([xtemp-1,ytemp-1]); // infer previous
+                }
+                coordinates.push([xtemp,ytemp]);
                 tally += 1;
             } else {
                 // Reset the tally if you find a gap.
+                coordinates = [];
                 tally = 0;
             }
             if (tally === countToWin - 1) {
-                return currentValue;
+                return {'player':currentValue, 'coordinates':coordinates};
             }
             previousValue = currentValue;
 
@@ -171,13 +191,18 @@ exports.diagonalWin = function (board, countToWin) {
         while (0 <= xtemp && ytemp <= yMax) {
             currentValue = board[ytemp][xtemp];
             if (currentValue === previousValue && currentValue !== null) {
+                if (tally == 0){
+                    coordinates.push([xtemp+1,ytemp-1]); // infer previous
+                }
+                coordinates.push([xtemp,ytemp]);
                 tally += 1;
             } else {
                 // Reset the tally if you find a gap.
+                coordinates = [];
                 tally = 0;
             }
             if (tally === countToWin - 1) {
-                return currentValue;
+                return {'player':currentValue, 'coordinates':coordinates};
             }
             previousValue = currentValue;
 
@@ -198,13 +223,18 @@ exports.diagonalWin = function (board, countToWin) {
         while (xtemp <= xMax && ytemp <= yMax) {
             currentValue = board[ytemp][xtemp];
             if (currentValue === previousValue && currentValue !== null) {
+                if (tally == 0){
+                    coordinates.push([xtemp-1,ytemp-1]); // infer previous
+                }
+                coordinates.push([xtemp,ytemp]);
                 tally += 1;
             } else {
                 // Reset the tally if you find a gap.
+                coordinates = [];
                 tally = 0;
             }
             if (tally === countToWin - 1) {
-                return currentValue;
+                return {'player':currentValue, 'coordinates':coordinates};
             }
             previousValue = currentValue;
 
@@ -225,13 +255,18 @@ exports.diagonalWin = function (board, countToWin) {
         while (0 <= xtemp && ytemp <= yMax) {
             currentValue = board[ytemp][xtemp];
             if (currentValue === previousValue && currentValue !== null) {
+                if (tally == 0){
+                    coordinates.push([xtemp+1,ytemp-1]); // infer previous
+                }
+                coordinates.push([xtemp,ytemp]);
                 tally += 1;
             } else {
                 // Reset the tally if you find a gap.
+                coordinates = [];
                 tally = 0;
             }
             if (tally === countToWin - 1) {
-                return currentValue;
+                return {'player':currentValue, 'coordinates':coordinates};
             }
             previousValue = currentValue;
 
