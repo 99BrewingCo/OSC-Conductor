@@ -7,6 +7,37 @@ var FieldValue = require('firebase-admin').firestore.FieldValue;
  */
 exports.resetGameBoard = function (db, force = false){
     console.log("----> Reset Game Board");
+
+    let _force = {
+        startOver: false,
+        connect4: false,
+        memory: false,
+        ticTacToe: false
+    };
+
+    // Parcel Force Out
+    if (force === Object(force)){
+        if (force.hasOwnProperty('startOver') && force.startOver !== undefined && force.startOver){
+            _force.startOver = true;
+        }
+        if (force.hasOwnProperty('connect4') && force.connect4 !== undefined && force.connect4){
+            _force.connect4 = true;
+        }
+        if (force.hasOwnProperty('memory') && force.memory !== undefined && force.memory){
+            _force.memory = true;
+        }
+        if (force.hasOwnProperty('ticTacToe') && force.ticTacToe !== undefined && force.ticTacToe){
+            _force.ticTacToe = true;
+        }
+    } else if (force === true){
+        _force = {
+            startOver: true,
+            connect4: true,
+            memory: true,
+            ticTacToe: true
+        };
+    }
+
     return db.runTransaction(function(transaction) {
         var currentCountRef = db.collection("count").doc("current");
         // This code may get re-run multiple times if there are conflicts.
@@ -16,7 +47,8 @@ exports.resetGameBoard = function (db, force = false){
             }
 
             let currentCountUpdate = {count: 100, inProgress: [], namePending: []};
-            if (force){
+            if (_force.startOver){
+                // force game to start over at round 1 with a basic (no) game
                 currentCountUpdate = Object.assign(currentCountUpdate, {
                     game: "basic", round: "1", 
                 });
@@ -32,6 +64,8 @@ exports.resetGameBoard = function (db, force = false){
                 // Correct for Forcing Full Game Reset
                 currentRound = force ? 0 : currentRound;
                 currentSkin = currentCountData.schedule[currentRound].skin;
+            } else {
+                console.error(`[resetGameBoard] unknown round <${currentCountData.round}> in schedule, cannot update as requested.`);
             }
 
             for (var i = 99; i > 0; i--) {
@@ -44,7 +78,7 @@ exports.resetGameBoard = function (db, force = false){
             }
 
             // Connect 4 Game Board Reset
-            if (force){
+            if (_force.connect4){
                 transaction.set(db.collection('count').doc('connect4'), {
                     game: 'connect4',
                     0: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
@@ -59,8 +93,22 @@ exports.resetGameBoard = function (db, force = false){
                 });
             }
 
+            // Connect 4 Game Board Reset
+            if (_force.memory){
+                transaction.set(db.collection('count').doc('memory'), {
+                    game: 'memory',
+                    0: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+                    1: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+                    2: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+                    3: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+                    4: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+                    archived: [],
+                    movesCount: 0
+                });
+            }
+
             // Tic-Tac-Toe Game Board Reset
-            if (force){
+            if (_force.ticTacToe){
                 transaction.set(db.collection('count').doc('tictactoe'), {
                     game: 'tictactoe',
                     0: [null, null, null],
@@ -284,13 +332,12 @@ function switchToTicTacToeUI(oscClient){
 }
 
 /**
- * Connect 4 Game Play
+ * 2D Bit Map Display
  */
 
 let range = function(start, stop){
     return [...Array(stop).keys()].map(i => i + start);
 }
-
 
 let bottlesBitMap = {
     'red': {99:0, 98:0, 97:1, 96:1, 95:1, 94:0, 93:0, 92:1, 91:1, 90:1, 89:1, 88:0, 87:1, 86:1, 85:1, 84:0, 83:0, 82:0, 81:0, 80:0, 79:0, 78:0, 77:1, 76:0, 75:0, 74:1, 73:0, 72:1, 71:0, 70:0, 69:0, 68:0, 67:1, 66:0, 65:0, 64:1, 63:0, 62:0, 61:0, 60:0, 59:0, 58:0, 57:1, 56:1, 55:1, 54:0, 53:0, 52:1, 51:1, 50:1, 49:0, 48:0, 47:1, 46:0, 45:0, 44:1, 43:0, 42:0, 41:0, 40:0, 39:0, 38:0, 37:1, 36:0, 35:1, 34:0, 33:0, 32:1, 31:0, 30:0, 29:0, 28:0, 27:1, 26:0, 25:0, 24:1, 23:0, 22:0, 21:0, 20:0, 19:0, 18:0, 17:1, 16:0, 15:0, 14:1, 13:0, 12:1, 11:1, 10:1, 9:1, 8:0, 7:1, 6:1, 5:1, 4:0, 3:0, 2:0, 1:0},
