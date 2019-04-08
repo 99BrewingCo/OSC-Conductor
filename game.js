@@ -369,7 +369,7 @@ exports.clearBitmap = function(db, options){
     });
 }
 
-exports.flashBitmap = function(db, bottleMap, colormap, name){
+exports.drawBitmap = function(db, bottleMap, colormap, name){
     console.log(`----> [${new Date().toTimeString()}] Flashing 2D Bit Map Image ${name}`);
     // Get a new write batch
     let batch = db.batch();
@@ -379,10 +379,12 @@ exports.flashBitmap = function(db, bottleMap, colormap, name){
     for (let bottleId in bottleMap) {
         // skip loop if the property is from prototype
         if (!bottleMap.hasOwnProperty(bottleId)) continue;
+        if (colormap.background === null && !bottleMap[bottleId]) continue;
         batch.update(displayRef.doc(bottleId.toString()), {
             "event.override": true,
             "skin.override": bottleMap[bottleId] ? colormap.foreground : colormap.background
         });
+        
     }
 
     return batch.commit().then(function () {
@@ -396,7 +398,7 @@ exports.flashAnimatedSequence = function(db, animation){
     console.log(`----> Flashing Animated Bit Map Sequence`);
 
     // play first frame
-    exports.flashBitmap(db, animation[0].map, animation[0].color, animation[0].name);
+    exports.drawBitmap(db, animation[0].map, animation[0].color, animation[0].name);
     let previousDuration = animation[0].duration;
 
     // remove first frame as we've already shown it. 
@@ -406,7 +408,7 @@ exports.flashAnimatedSequence = function(db, animation){
         return promiseChain.then(chainResults =>
             new Promise((resolve, reject) => {
                 let wait = setTimeout(() => {
-                    exports.flashBitmap(db, currentTask.map, currentTask.color, currentTask.name).then(function (){
+                    exports.drawBitmap(db, currentTask.map, currentTask.color, currentTask.name).then(function (){
                         clearTimeout(wait);
                         resolve(currentTask.name);
                     });
@@ -526,6 +528,11 @@ exports.sendConnect4BottleStatus = function(oscClient, player, x_pos, y_pos){
 /**
  * Tic Tac Toe Game Play
  */
+
+let ticTacToeBoard = {99:0, 98:1, 97:0, 96:1, 95:0, 94:0, 93:0, 92:1, 91:0, 90:1, 89:0, 88:0, 87:0, 86:1, 85:0, 84:1, 83:0, 82:0, 81:0, 80:0, 79:1, 78:1, 77:1, 76:1, 75:1, 74:0, 73:1, 72:1, 71:1, 70:1, 69:1, 68:0, 67:1, 66:1, 65:1, 64:1, 63:1, 62:0, 61:0, 60:0, 59:0, 58:1, 57:0, 56:1, 55:0, 54:0, 53:0, 52:1, 51:0, 50:1, 49:0, 48:0, 47:0, 46:1, 45:0, 44:1, 43:0, 42:0, 41:0, 40:0, 39:1, 38:1, 37:1, 36:1, 35:1, 34:0, 33:1, 32:1, 31:1, 30:1, 29:1, 28:0, 27:1, 26:1, 25:1, 24:1, 23:1, 22:0, 21:0, 20:0, 19:0, 18:1, 17:0, 16:1, 15:0, 14:0, 13:0, 12:1, 11:0, 10:1, 9:0, 8:0, 7:0, 6:1, 5:0, 4:1, 3:0, 2:0, 1:0};
+exports.displayTicTacToeBoards = function(db){
+    return exports.drawBitmap(db, ticTacToeBoard, {foreground: 'black', background: null}, 'tic tac toe board');
+}
 
 exports.triggerTicTacToeMove = function(db, x_pos, y_pos){
     return db.runTransaction(function(transaction) {
