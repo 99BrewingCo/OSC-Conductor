@@ -60,7 +60,7 @@ if (args === Object(args)){
 var oscController = new osc.UDPPort({
     localAddress: "0.0.0.0",
     localPort: 8000,
-    remotePort: 9000,
+    remotePort: remotePort,
     remoteAddress: remoteAddress
 });
 

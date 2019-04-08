@@ -3,6 +3,50 @@ var diff = require('deep-diff').diff;
 var game = require('./game.js');
 var osc = require("osc");
 
+// process arguments
+var args = require('minimist')(process.argv.slice(2));
+
+let remoteAddress = undefined;
+let remotePort = undefined;
+
+if (args === Object(args)){
+
+    // remote port
+    if (args.hasOwnProperty('remote-port') && args['remote-port'] !== undefined){
+        // set remote option
+        remotePort = args['remote-port'];
+    } else {
+        // load in remote options from disk
+        let diskConfig = JSON.parse(fs.readFileSync('config.json'));
+        remotePort = diskConfig.osc.remotePort;
+    }
+
+    // remote address
+    if (args.hasOwnProperty('remote-address') && args['remote-address'] !== undefined){
+        // set remote option
+        remoteAddress = args['remote-address'];
+    } else {
+        // load in remote options from disk
+        let diskConfig = JSON.parse(fs.readFileSync('config.json'));
+        remoteAddress = diskConfig.osc.remoteAddress;
+    }
+
+    // save configured options
+    if (args.hasOwnProperty('save') && args.save){
+        // save remote to disk
+        // load in remote options from disk
+        let diskConfig = JSON.parse(fs.readFileSync('config.json'));
+
+        // write to disk
+        diskConfig.osc.remoteAddress = remoteAddress;
+        diskConfig.osc.remotePort = remotePort;
+        fs.writeFileSync('config.json', JSON.stringify(diskConfig));
+    }
+} else {
+    console.error('something unexpected happened while parsing the command line arguments.');
+    process.exit();
+}
+
 // Initalise Firestore Connection
 var serviceAccount = require('./credentials/project-99-firestore.json');
 
@@ -17,8 +61,8 @@ db.settings({timestampsInSnapshots: true});
 var oscController = new osc.UDPPort({
     localAddress: "0.0.0.0",
     localPort: 8000,
-    remotePort: 9000,
-    remoteAddress: "172.27.7.102"
+    remotePort: remotePort,
+    remoteAddress: remoteAddress
 });
 
 var gameBoard = {};
