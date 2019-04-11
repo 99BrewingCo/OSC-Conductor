@@ -1,8 +1,39 @@
-var shuffle = require('shuffle-array'); // for memory game
+const shuffle = require('shuffle-array'); // for memory game
+const { createLogger, format, transports } = require('winston'); // logging
+var FieldValue = require('firebase-admin').firestore.FieldValue;
 
 var connect4 = require('./connect4.js');
 
-var FieldValue = require('firebase-admin').firestore.FieldValue;
+/**
+ *  Logging
+ */
+
+const logger = createLogger({
+  level: 'info',
+  format: format.combine(
+    format.timestamp({
+      format: 'YYYY-MM-DD HH:mm:ss'
+    }),
+    format.errors({ stack: true }),
+    format.splat(),
+    format.json()
+  ),
+  defaultMeta: { service: '99-OSC-Conductor' },
+  transports: [
+    new transports.File({ filename: '99-osc-conductor-error.log', level: 'error' }),
+    new transports.File({ filename: '99-osc-conductor-combined.log' })
+  ]
+});
+
+// in development use colorized simple format
+if (process.env.NODE_ENV !== 'production') {
+  logger.add(new transports.Console({
+    format: format.combine(
+      format.colorize(),
+      format.simple()
+    )
+  }));
+}
 
 /**
  *  General Board Conversions
@@ -20,7 +51,7 @@ let getBottleIdFromCoords = function(x_pos, y_pos){
 
 let getBottleCoordsFromId = function(bottleId){
     if (bottleId > 99 || bottleId < 1) {
-        console.error(`invalid bottleId passed <${bottleId}>`);
+        logger.error(`invalid bottleId passed <${bottleId}>`);
         return;
     }
     return {
@@ -34,8 +65,6 @@ let getBottleCoordsFromId = function(bottleId){
  *  Reset's The Game Board
  */
 exports.resetGameBoard = function (db, force = false){
-    console.log("----> Reset Game Board");
-
     let _force = {
         startOver: false,
         connect4: false,
@@ -66,9 +95,9 @@ exports.resetGameBoard = function (db, force = false){
         };
     }
 
+    logger.warn(`----> Reset Game Board.`, _force);
     return db.runTransaction(function(transaction) {
         var currentCountRef = db.collection("count").doc("current");
-        // This code may get re-run multiple times if there are conflicts.
         return transaction.get(currentCountRef).then(function(currentCount) {
             if (!currentCount.exists) {
                 return;
@@ -93,7 +122,7 @@ exports.resetGameBoard = function (db, force = false){
                 currentRound = force ? 0 : currentRound;
                 currentSkin = currentCountData.schedule[currentRound].skin;
             } else {
-                console.error(`[resetGameBoard] unknown round <${currentCountData.round}> in schedule, cannot update as requested.`);
+                logger.error(`[resetGameBoard] unknown round <${currentCountData.round}> in schedule, cannot update as requested.`);
             }
 
             for (var i = 99; i > 0; i--) {
@@ -156,12 +185,12 @@ exports.resetGameBoard = function (db, force = false){
             }
         });
     }).catch(function(error) {
-        console.error("Transaction failed: ", error);
+        logger.error(`[resetGameBoard] transaction failed`, error);
     });
 }
 
 exports.startBottlePour = function (db){
-    console.log("----> Start Beer Pouring");
+    logger.info("----> Start Beer Pouring");
     return db.runTransaction(function(transaction) {
         var currentRef = db.collection("count").doc("current");
         return transaction.get(currentRef).then(function(current) {
@@ -205,20 +234,19 @@ exports.startBottlePour = function (db){
         });
     }).then(function(data) {
         if (data === -1){
-            console.log("      Final Beer Consumed in Round.");
+            logger.warn("      Final Beer Consumed in Round.");
             exports.resetGameBoard(db);
         }
         return true;
     }).catch(function(error) {
-        console.error("Transaction failed: ", error);
+        logger.error(`[startBottlePour] transaction failed`, error);
     });
 }
 
 exports.cancelBottlePour = function (db){
-    console.log("----> Cancel Beer Pouring");
+    logger.info("----> Cancel Beer Pouring");
     return db.runTransaction(function(transaction) {
         var currentRef = db.collection("count").doc("current");
-        // This code may get re-run multiple times if there are conflicts.
         return transaction.get(currentRef).then(function(current) {
             if (!current.exists) return;
 
@@ -242,12 +270,12 @@ exports.cancelBottlePour = function (db){
            }
         });
     }).catch(function(error) {
-        console.error("Transaction failed: ", error);
+        logger.error(`[cancelBottlePour] transaction failed`, error);
     });
 }
 
 exports.triggerBottleEffect = function (bottleId){
-    console.log(`----> Trigger Effect on Bottle ${bottleId}`);
+    logger.info(`----> Trigger Effect on Bottle ${bottleId}`);
 }
 
 /**
@@ -266,22 +294,22 @@ function sendLedStatus(oscClient, address, value){
 }
 
 exports.sendAnimationCompleteStatus = function(oscClient, bottleId){
-    console.log(`      Sending Animation Complete Status for Bottle ${bottleId}`);
+    logger.info(`      Sending Animation Complete Status for Bottle ${bottleId}`);
     return sendLedStatus(oscClient, `/bottle/status/complete/${bottleId}`, true);
 }
 
 exports.clearAnimationCompleteStatus = function(oscClient, bottleId){
-    console.log(`      Clearing Animation Complete Status for Bottle ${bottleId}`);
+    logger.verbose(`      Clearing Animation Complete Status for Bottle ${bottleId}`);
     return sendLedStatus(oscClient, `/bottle/status/complete/${bottleId}`, false);
 }
 
 exports.sendNameStatus = function(oscClient, bottleId){
-    console.log(`      Sending Name Status for Bottle ${bottleId}`);
+    logger.info(`      Sending Name Status for Bottle ${bottleId}`);
     return sendLedStatus(oscClient, `/bottle/status/name/${bottleId}`, true);
 }
 
 exports.clearNameStatus = function(oscClient, bottleId){
-    console.log(`      Clearing Name Status for Bottle ${bottleId}`);
+    logger.verbose(`      Clearing Name Status for Bottle ${bottleId}`);
     return sendLedStatus(oscClient, `/bottle/status/name/${bottleId}`, false);
 }
 
@@ -310,12 +338,12 @@ exports.clearName = function(oscClient, bottleId){
 }
 
 exports.sendEmptyBottleStatus = function(oscClient, bottleId){
-    console.log(`      Sending Empty Bottle Status for Bottle ${bottleId}`);
+    logger.info(`      Sending Empty Bottle Status for Bottle ${bottleId}`);
     return sendLedStatus(oscClient, `/bottle/status/${bottleId}`, true);
 }
 
 exports.clearEmptyBottleStatus = function(oscClient, bottleId){
-    console.log(`      Clearing Empy Bottle Status for Bottle ${bottleId}`);
+    logger.verbose(`      Clearing Empy Bottle Status for Bottle ${bottleId}`);
     return sendLedStatus(oscClient, `/bottle/status/${bottleId}`, false);
 }
 
@@ -323,7 +351,7 @@ exports.clearEmptyBottleStatus = function(oscClient, bottleId){
  * Round Mechanics
  */
 exports.updateRound = function(oscClient, round){
-    console.log(`----> Updating Round to '${round}'`);
+    logger.warn(`----> Updating Round to '${round}'`);
     [1,2,3,4,5,6].forEach(round => sendLedStatus(oscClient, `/round/${round}`, false));
     sendLedStatus(oscClient, `/round/${round}`, true);
 }
@@ -336,26 +364,26 @@ exports.switchToUI = function(oscClient, currentGame){
     } else if (currentGame == 'tictactoe'){
         switchToTicTacToeUI(oscClient);
     } else {
-        console.error(`----> Error: Unknown game interface requested '${currentGame}'`);
+        logger.error(`----> Error: Unknown game interface requested '${currentGame}'`);
     }
 }
 
 function switchToBasicUI(oscClient){
-    console.log(`----> Switching Basic Game UI`);
+    logger.info(`----> Switching Basic Game UI`);
     return oscClient.send({
         address: `/Project 99 Status`,
     });
 }
 
 function switchToConnect4UI(oscClient){
-    console.log(`----> Switching Connect 4 Game UI`);
+    logger.info(`----> Switching Connect 4 Game UI`);
     return oscClient.send({
         address: `/2`,
     });
 }
 
 function switchToTicTacToeUI(oscClient){
-    console.log(`----> Switching Tic-Tac-Toe Game UI`);
+    logger.info(`----> Switching Tic-Tac-Toe Game UI`);
     return oscClient.send({
         address: `/4`,
     });
@@ -414,7 +442,7 @@ let animationSequence = {
 };
 
 exports.clearBitmap = function(db, options){
-    console.log(`----> [${new Date().toTimeString()}] Clearing Connect Four Bottles`);
+    logger.info(`----> Clearing 2D Bit Map Image`);
 
     let bottles = null;
     // if options object provided
@@ -430,7 +458,6 @@ exports.clearBitmap = function(db, options){
     }
 
     return db.runTransaction(function(transaction) {
-        // This code may get re-run multiple times if there are conflicts.
         return transaction.get(db.collection("count").doc("current")).then(function(current) {
             let displayRef = db.collection("display");
             bottles.forEach(function(bottleId){
@@ -440,11 +467,13 @@ exports.clearBitmap = function(db, options){
                 });
             });
         });
+    }).catch(function(error) {
+        logger.error(`[clearBitmap] transaction failed`, error);
     });
 }
 
 exports.drawBitmap = function(db, bottleMap, colormap, name){
-    console.log(`----> [${new Date().toTimeString()}] Flashing 2D Bit Map Image ${name}`);
+    logger.info(`----> Flashing 2D Bit Map Image ${name}`);
     // Get a new write batch
     let batch = db.batch();
 
@@ -464,12 +493,12 @@ exports.drawBitmap = function(db, bottleMap, colormap, name){
     return batch.commit().then(function () {
         return true;
     }).catch(function(error) {
-        console.error("Transaction failed: ", error);
+        logger.error(`[drawBitmap] transaction failed`, error);
     });
 }
 
 exports.flashAnimatedSequence = function(db, animation){
-    console.log(`----> Flashing Animated Bit Map Sequence`);
+    logger.info(`----> Flashing Animated Bit Map Sequence`);
 
     // play first frame
     exports.drawBitmap(db, animation[0].map, animation[0].color, animation[0].name);
@@ -492,7 +521,10 @@ exports.flashAnimatedSequence = function(db, animation){
                 [ ...chainResults, currentResult ]
             )
         );
-    }, Promise.resolve([])).then(data => { return exports.clearBitmap(db);});
+    }, Promise.resolve([])).then(data => { return exports.clearBitmap(db);})
+    .catch(function(error) {
+        logger.error(`[flashAnimatedSequence] transaction failed`, error);
+    });
 }
 
 /**
@@ -503,18 +535,13 @@ exports.flashAnimatedSequence = function(db, animation){
 exports.triggerColumnMove = function(db, x_pos){
     return db.runTransaction(function(transaction) {
         var connect4Ref = db.collection("count").doc("connect4");
-        // This code may get re-run multiple times if there are conflicts.
         return transaction.get(connect4Ref).then(function(connect4Data) {
             if (!connect4Data.exists) {
+                logger.error(`[triggerColumnMove] Missing 'Connect 4' database reference`);
                 return;
             }
 
             return transaction.get(db.collection("display").where("event.override", "==", true).select()).then(function(displayData){
-                if (displayData.empty) {
-                    console.log('No matching documents.');
-                    // return;
-                }
-
                 let currentDisplayIds = [];
                 displayData.forEach(doc => currentDisplayIds.push(doc.id));
 
@@ -527,7 +554,7 @@ exports.triggerColumnMove = function(db, x_pos){
                 // Check for Win
                 gameWon = connect4.horizontalWin(board, data['countToWin']) || connect4.verticalWin(board, data['countToWin']) || connect4.diagonalWin(board, data['countToWin']);
 
-                console.log(`----> Drop Token for ${data.currentPlayer} at row ${y_pos}, column ${x_pos}`);
+                logger.info(`----> Drop Token for ${data.currentPlayer} at row ${y_pos}, column ${x_pos}`);
 
                 // Database Update
                 let gameTransactionUpdate = {};
@@ -577,7 +604,7 @@ exports.triggerColumnMove = function(db, x_pos){
             });
         });
     }).catch(function(error) {
-        console.error("Transaction failed: ", error);
+        logger.error(`[triggerColumnMove] transaction failed`, error);
     });
 }
 
@@ -585,11 +612,11 @@ exports.sendConnect4BottleStatus = function(oscClient, player, x_pos, y_pos){
     let bottleId = getBottleIdFromCoords(x_pos, y_pos);
 
     if (player === null){
-        console.log(`      Clearing Connect 4 Bottle at row ${x_pos}, column ${y_pos} at bottle ${bottleId}`);
+        logger.verbose(`      Clearing Connect 4 Bottle at row ${x_pos}, column ${y_pos} at bottle ${bottleId}`);
         sendLedStatus(oscClient, `/bottle/red/${bottleId}`, false);
         sendLedStatus(oscClient, `/bottle/blue/${bottleId}`, false);
     } else {
-        console.log(`      Setting a Connect 4 move for player ${player} for Bottle at row ${x_pos}, column ${y_pos} at bottle ${bottleId}`);
+        logger.info(`      Setting a Connect 4 move for player ${player} for Bottle at row ${x_pos}, column ${y_pos} at bottle ${bottleId}`);
         return sendLedStatus(oscClient, `/bottle/${player}/${bottleId}`, true);
     }
 }
@@ -606,9 +633,9 @@ exports.displayTicTacToeBoards = function(db){
 exports.triggerTicTacToeMove = function(db, x_pos, y_pos){
     return db.runTransaction(function(transaction) {
         var tictactoeRef = db.collection('count').doc('tictactoe');
-        // This code may get re-run multiple times if there are conflicts.
         return transaction.get(tictactoeRef).then(function(tictactoeData) {
             if (!tictactoeData.exists) {
+                logger.error(`[triggerTicTacToeMove] Missing 'Tic Tac Toe' database reference`);
                 return;
             }
 
@@ -620,7 +647,7 @@ exports.triggerTicTacToeMove = function(db, x_pos, y_pos){
             // Check for Win
             gameWon = connect4.horizontalWin(board, data.countToWin) || connect4.verticalWin(board, data.countToWin) || connect4.diagonalWin(board, data.countToWin);
 
-            console.log(`----> ${data.currentPlayer} placed a move at row ${y_pos}, column ${x_pos}`);
+            logger.info(`----> ${data.currentPlayer} placed a move at row ${y_pos}, column ${x_pos}`);
 
             // Database Update
             let gameTransactionUpdate = {};
@@ -636,7 +663,7 @@ exports.triggerTicTacToeMove = function(db, x_pos, y_pos){
                     archived: data.archived
                 };
             } else if (connect4.gameIsDraw(board)) {
-                console.log('game is a draw');
+                logger.info('game is a draw');
 
                 data.archived.push({board: JSON.stringify(board), timestamp: new Date()});
                 gameTransactionUpdate = {
@@ -657,13 +684,13 @@ exports.triggerTicTacToeMove = function(db, x_pos, y_pos){
 
         });
     }).catch(function(error) {
-        console.error("Transaction failed: ", error);
+        logger.error(`[triggerTicTacToeMove] transaction failed`, error);
     });
 }
 
 exports.sendTicTacToeBottleStatus = function(oscClient, player, x_pos, y_pos, game = "current"){
     if (player === null){
-        console.log(`      Clearing Tic-Tac-Toe Bottle at row ${x_pos}, column ${y_pos}`);
+        logger.verbose(`      Clearing Tic-Tac-Toe Bottle at row ${x_pos}, column ${y_pos}`);
         return oscClient.send({
         address: `/ttt/${game}/status/${y_pos}/${x_pos}`,
         args: [
@@ -674,7 +701,7 @@ exports.sendTicTacToeBottleStatus = function(oscClient, player, x_pos, y_pos, ga
         ]
     });
     } else {
-        console.log(`      Setting a Tic-Tac-Toe move for player ${player} for Bottle at row ${x_pos}, column ${y_pos}`);
+        logger.info(`      Setting a Tic-Tac-Toe move for player ${player} for Bottle at row ${x_pos}, column ${y_pos}`);
         return oscClient.send({
         address: `/ttt/${game}/status/${y_pos}/${x_pos}`,
         args: [
@@ -695,7 +722,6 @@ exports.sendTicTacToeBottleStatus = function(oscClient, player, x_pos, y_pos, ga
 exports.setUpMemoryGame = function(db){
     return db.runTransaction(function(transaction) {
         var memoryRef = db.collection("count").doc("memory");
-        // This code may get re-run multiple times if there are conflicts.
         return transaction.get(memoryRef).then(function(memoryData) {
             if (!memoryData.exists) return;
 
@@ -742,7 +768,7 @@ exports.setUpMemoryGame = function(db){
             });
         });
     }).catch(function(error) {
-        console.error("Transaction failed: ", error);
+        logger.error(`[setUpMemoryGame] transaction failed`, error);
     });
 }
 
@@ -751,7 +777,6 @@ exports.triggerMemoryMove = function(db, bottleId, duration=1000){
     let memoryRef = db.collection("count").doc("memory");
 
     return db.runTransaction(function(transaction) {
-        // This code may get re-run multiple times if there are conflicts.
         return transaction.get(memoryRef).then(function(memoryData) {
             if (!memoryData.exists) return;
 
@@ -824,7 +849,7 @@ exports.triggerMemoryMove = function(db, bottleId, duration=1000){
             }
         });
     }).catch(function(error) {
-        console.error("Transaction failed: ", error);
+        logger.error(`[triggerMemoryMove] transaction failed`, error);
     });
 }
 
@@ -852,6 +877,6 @@ exports.teaseMemoryBottle = function(db, duration=1000, bottleId=false){
             }, duration);
         });
     }).catch(function(error) {
-        console.error("Transaction failed: ", error);
+        logger.error(`[teaseMemoryBottle] transaction failed`, error);
     });
 }
