@@ -61,6 +61,12 @@ let getBottleCoordsFromId = function(bottleId){
     };
 }
 
+
+/**
+ *  Module Exports Setup
+ */
+exports.games = {};
+
 /**
  *  Reset's The Game Board
  */
@@ -356,6 +362,27 @@ exports.updateRound = function(oscClient, round){
     sendLedStatus(oscClient, `/round/${round}`, true);
 }
 
+let switchToBasicUI = function(oscClient){
+    logger.info(`----> Switching Basic Game UI`);
+    return oscClient.send({
+        address: `/Project 99 Status`,
+    });
+}
+
+let switchToConnect4UI = function(oscClient){
+    logger.info(`----> Switching Connect 4 Game UI`);
+    return oscClient.send({
+        address: `/2`,
+    });
+}
+
+let switchToTicTacToeUI = function(oscClient){
+    logger.info(`----> Switching Tic-Tac-Toe Game UI`);
+    return oscClient.send({
+        address: `/4`,
+    });
+}
+
 exports.switchToUI = function(oscClient, currentGame){
     if (currentGame == 'basic'){
         switchToBasicUI(oscClient);
@@ -368,31 +395,9 @@ exports.switchToUI = function(oscClient, currentGame){
     }
 }
 
-function switchToBasicUI(oscClient){
-    logger.info(`----> Switching Basic Game UI`);
-    return oscClient.send({
-        address: `/Project 99 Status`,
-    });
-}
-
-function switchToConnect4UI(oscClient){
-    logger.info(`----> Switching Connect 4 Game UI`);
-    return oscClient.send({
-        address: `/2`,
-    });
-}
-
-function switchToTicTacToeUI(oscClient){
-    logger.info(`----> Switching Tic-Tac-Toe Game UI`);
-    return oscClient.send({
-        address: `/4`,
-    });
-}
-
 /**
  * 2D Bit Map Display
  */
-
 
 let bottlesBitMap = {
     'red': {99:0, 98:0, 97:1, 96:1, 95:1, 94:0, 93:0, 92:1, 91:1, 90:1, 89:1, 88:0, 87:1, 86:1, 85:1, 84:0, 83:0, 82:0, 81:0, 80:0, 79:0, 78:0, 77:1, 76:0, 75:0, 74:1, 73:0, 72:1, 71:0, 70:0, 69:0, 68:0, 67:1, 66:0, 65:0, 64:1, 63:0, 62:0, 61:0, 60:0, 59:0, 58:0, 57:1, 56:1, 55:1, 54:0, 53:0, 52:1, 51:1, 50:1, 49:0, 48:0, 47:1, 46:0, 45:0, 44:1, 43:0, 42:0, 41:0, 40:0, 39:0, 38:0, 37:1, 36:0, 35:1, 34:0, 33:0, 32:1, 31:0, 30:0, 29:0, 28:0, 27:1, 26:0, 25:0, 24:1, 23:0, 22:0, 21:0, 20:0, 19:0, 18:0, 17:1, 16:0, 15:0, 14:1, 13:0, 12:1, 11:1, 10:1, 9:1, 8:0, 7:1, 6:1, 5:1, 4:0, 3:0, 2:0, 1:0},
@@ -441,7 +446,11 @@ let animationSequence = {
     ],
 };
 
-exports.clearBitmap = function(db, options){
+exports.bitmap = {
+    config: {}
+};
+
+exports.bitmap.clear = function(db, options){
     logger.info(`----> Clearing 2D Bit Map Image`);
 
     let bottles = null;
@@ -468,11 +477,11 @@ exports.clearBitmap = function(db, options){
             });
         });
     }).catch(function(error) {
-        logger.error(`[clearBitmap] transaction failed`, error);
+        logger.error(`[bitmap.clear] transaction failed`, error);
     });
 }
 
-exports.drawBitmap = function(db, bottleMap, colormap, name){
+exports.bitmap.draw = function(db, bottleMap, colormap, name){
     logger.info(`----> Flashing 2D Bit Map Image ${name}`);
     // Get a new write batch
     let batch = db.batch();
@@ -493,15 +502,15 @@ exports.drawBitmap = function(db, bottleMap, colormap, name){
     return batch.commit().then(function () {
         return true;
     }).catch(function(error) {
-        logger.error(`[drawBitmap] transaction failed`, error);
+        logger.error(`[bitmap.draw] transaction failed`, error);
     });
 }
 
-exports.flashAnimatedSequence = function(db, animation){
+exports.bitmap.play = function(db, animation){
     logger.info(`----> Flashing Animated Bit Map Sequence`);
 
     // play first frame
-    exports.drawBitmap(db, animation[0].map, animation[0].color, animation[0].name);
+    exports.bitmap.draw(db, animation[0].map, animation[0].color, animation[0].name);
     let previousDuration = animation[0].duration;
 
     // remove first frame as we've already shown it.
@@ -511,7 +520,7 @@ exports.flashAnimatedSequence = function(db, animation){
         return promiseChain.then(chainResults =>
             new Promise((resolve, reject) => {
                 let wait = setTimeout(() => {
-                    exports.drawBitmap(db, currentTask.map, currentTask.color, currentTask.name).then(function (){
+                    exports.bitmap.draw(db, currentTask.map, currentTask.color, currentTask.name).then(function (){
                         clearTimeout(wait);
                         resolve(currentTask.name);
                     });
@@ -521,23 +530,26 @@ exports.flashAnimatedSequence = function(db, animation){
                 [ ...chainResults, currentResult ]
             )
         );
-    }, Promise.resolve([])).then(data => { return exports.clearBitmap(db);})
+    }, Promise.resolve([])).then(data => { return exports.bitmap.clear(db);})
     .catch(function(error) {
-        logger.error(`[flashAnimatedSequence] transaction failed`, error);
+        logger.error(`[bitmap.play] transaction failed`, error);
     });
 }
 
 /**
  * Connect 4 Game Play
  */
+exports.games.connect4 = {
+    config: {},
+    osc: {}
+};
 
-
-exports.triggerColumnMove = function(db, x_pos){
+exports.games.connect4.play = function(db, x_pos){
     return db.runTransaction(function(transaction) {
         var connect4Ref = db.collection("count").doc("connect4");
         return transaction.get(connect4Ref).then(function(connect4Data) {
             if (!connect4Data.exists) {
-                logger.error(`[triggerColumnMove] Missing 'Connect 4' database reference`);
+                logger.error(`[games.connect4.play] Missing 'Connect 4' database reference`);
                 return;
             }
 
@@ -593,7 +605,7 @@ exports.triggerColumnMove = function(db, x_pos){
                     });
 
                     // Celebrate Winner
-                    setTimeout(exports.flashAnimatedSequence, 5000, db, animationSequence[gameWon.player]);
+                    setTimeout(exports.bitmap.play, 5000, db, animationSequence[gameWon.player]);
                 }
 
                 gameTransactionUpdate = Object.assign(gameTransactionUpdate, {
@@ -604,11 +616,11 @@ exports.triggerColumnMove = function(db, x_pos){
             });
         });
     }).catch(function(error) {
-        logger.error(`[triggerColumnMove] transaction failed`, error);
+        logger.error(`[games.connect4.play] transaction failed`, error);
     });
 }
 
-exports.sendConnect4BottleStatus = function(oscClient, player, x_pos, y_pos){
+exports.games.connect4.osc.update = function(oscClient, player, x_pos, y_pos){
     let bottleId = getBottleIdFromCoords(x_pos, y_pos);
 
     if (player === null){
@@ -624,18 +636,23 @@ exports.sendConnect4BottleStatus = function(oscClient, player, x_pos, y_pos){
 /**
  * Tic Tac Toe Game Play
  */
+exports.games.ticTacToe = {
+    config: {
+        board: {99:0, 98:1, 97:0, 96:1, 95:0, 94:0, 93:0, 92:1, 91:0, 90:1, 89:0, 88:0, 87:0, 86:1, 85:0, 84:1, 83:0, 82:0, 81:0, 80:0, 79:1, 78:1, 77:1, 76:1, 75:1, 74:0, 73:1, 72:1, 71:1, 70:1, 69:1, 68:0, 67:1, 66:1, 65:1, 64:1, 63:1, 62:0, 61:0, 60:0, 59:0, 58:1, 57:0, 56:1, 55:0, 54:0, 53:0, 52:1, 51:0, 50:1, 49:0, 48:0, 47:0, 46:1, 45:0, 44:1, 43:0, 42:0, 41:0, 40:0, 39:1, 38:1, 37:1, 36:1, 35:1, 34:0, 33:1, 32:1, 31:1, 30:1, 29:1, 28:0, 27:1, 26:1, 25:1, 24:1, 23:1, 22:0, 21:0, 20:0, 19:0, 18:1, 17:0, 16:1, 15:0, 14:0, 13:0, 12:1, 11:0, 10:1, 9:0, 8:0, 7:0, 6:1, 5:0, 4:1, 3:0, 2:0, 1:0}
+    },
+    osc: {}
+};
 
-let ticTacToeBoard = {99:0, 98:1, 97:0, 96:1, 95:0, 94:0, 93:0, 92:1, 91:0, 90:1, 89:0, 88:0, 87:0, 86:1, 85:0, 84:1, 83:0, 82:0, 81:0, 80:0, 79:1, 78:1, 77:1, 76:1, 75:1, 74:0, 73:1, 72:1, 71:1, 70:1, 69:1, 68:0, 67:1, 66:1, 65:1, 64:1, 63:1, 62:0, 61:0, 60:0, 59:0, 58:1, 57:0, 56:1, 55:0, 54:0, 53:0, 52:1, 51:0, 50:1, 49:0, 48:0, 47:0, 46:1, 45:0, 44:1, 43:0, 42:0, 41:0, 40:0, 39:1, 38:1, 37:1, 36:1, 35:1, 34:0, 33:1, 32:1, 31:1, 30:1, 29:1, 28:0, 27:1, 26:1, 25:1, 24:1, 23:1, 22:0, 21:0, 20:0, 19:0, 18:1, 17:0, 16:1, 15:0, 14:0, 13:0, 12:1, 11:0, 10:1, 9:0, 8:0, 7:0, 6:1, 5:0, 4:1, 3:0, 2:0, 1:0};
-exports.displayTicTacToeBoards = function(db){
-    return exports.drawBitmap(db, ticTacToeBoard, {foreground: 'black', background: null}, 'tic tac toe board');
+exports.games.ticTacToe.init = function(db){
+    return exports.bitmap.draw(db, exports.games.ticTacToe.config.board, {foreground: 'black', background: null}, 'Tic-Tac-Toe Game Board');
 }
 
-exports.triggerTicTacToeMove = function(db, x_pos, y_pos){
+exports.games.ticTacToe.play = function(db, x_pos, y_pos){
     return db.runTransaction(function(transaction) {
         var tictactoeRef = db.collection('count').doc('tictactoe');
         return transaction.get(tictactoeRef).then(function(tictactoeData) {
             if (!tictactoeData.exists) {
-                logger.error(`[triggerTicTacToeMove] Missing 'Tic Tac Toe' database reference`);
+                logger.error(`[games.ticTacToe.play] Missing 'Tic Tac Toe' database reference`);
                 return;
             }
 
@@ -684,11 +701,11 @@ exports.triggerTicTacToeMove = function(db, x_pos, y_pos){
 
         });
     }).catch(function(error) {
-        logger.error(`[triggerTicTacToeMove] transaction failed`, error);
+        logger.error(`[games.ticTacToe.play] transaction failed`, error);
     });
 }
 
-exports.sendTicTacToeBottleStatus = function(oscClient, player, x_pos, y_pos, game = "current"){
+exports.games.ticTacToe.osc.update = function(oscClient, player, x_pos, y_pos, game = "current"){
     if (player === null){
         logger.verbose(`      Clearing Tic-Tac-Toe Bottle at row ${x_pos}, column ${y_pos}`);
         return oscClient.send({
@@ -714,12 +731,18 @@ exports.sendTicTacToeBottleStatus = function(oscClient, player, x_pos, y_pos, ga
     }
 }
 
-
 /**
  * Memory Game Play
  */
+exports.games.memory = {
+    config: {
+        teaserRevealDuration: 1000, // in ms
+        wrongMatchDuration: 1000 // in ms
+    },
+    osc: {}
+};
 
-exports.setUpMemoryGame = function(db){
+exports.games.memory.init = function(db){
     return db.runTransaction(function(transaction) {
         var memoryRef = db.collection("count").doc("memory");
         return transaction.get(memoryRef).then(function(memoryData) {
@@ -772,7 +795,7 @@ exports.setUpMemoryGame = function(db){
     });
 }
 
-exports.triggerMemoryMove = function(db, bottleId, duration=1000){
+exports.games.memory.play = function(db, bottleId){
     let displayRef = db.collection("display");
     let memoryRef = db.collection("count").doc("memory");
 
@@ -840,7 +863,7 @@ exports.triggerMemoryMove = function(db, bottleId, duration=1000){
                             clearTimeout(wait);
                             resolve();
                         });
-                    }, duration);
+                    }, exports.games.memory.config.wrongMatchDuration);
                 } else {
                     resolve();
                 }
@@ -853,7 +876,7 @@ exports.triggerMemoryMove = function(db, bottleId, duration=1000){
     });
 }
 
-exports.teaseMemoryBottle = function(db, duration=1000, bottleId=false){
+exports.games.memory.teaseBottle = function(db, bottleId=false){
     // choose random bottle
     if (!bottleId){
         bottleId = Math.floor(Math.random() * 99) + 1;
@@ -874,7 +897,7 @@ exports.teaseMemoryBottle = function(db, duration=1000, bottleId=false){
                     clearTimeout(wait);
                     resolve();
                 });
-            }, duration);
+            }, exports.games.memory.config.teaserRevealDuration);
         });
     }).catch(function(error) {
         logger.error(`[teaseMemoryBottle] transaction failed`, error);
