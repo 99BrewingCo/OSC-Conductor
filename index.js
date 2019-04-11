@@ -2,6 +2,7 @@ const admin = require('firebase-admin');
 var diff = require('deep-diff').diff;
 var game = require('./game.js');
 var osc = require("osc");
+const fs = require('fs');
 
 // process arguments
 var args = require('minimist')(process.argv.slice(2));
@@ -158,6 +159,8 @@ var displayUnsubscribeHandle = db.collection('display').onSnapshot(snapshot => {
 
 var gameMeta = {};
 
+var memoryGameTeaserInterval = null;
+
 var countUnsubscribeHandle = db.collection('count').onSnapshot(snapshot => {
     if (snapshot.empty) {
         console.error('No count document changes found.');
@@ -194,8 +197,10 @@ var countUnsubscribeHandle = db.collection('count').onSnapshot(snapshot => {
                                     game.sendConnect4BottleStatus(oscController, player, x, y);
                                 } else if (difference.rhs.game === 'tictactoe') {
                                     game.sendTicTacToeBottleStatus(oscController, player, x, y);
+                                } else if (difference.rhs.game === 'memory') {
+                                    return;
                                 } else {
-                                    console.error(`----> Error: Unknown Game`);
+                                    console.error(`----> Error: Unknown Game`, difference.path);
                                 }
                             });
                         }
@@ -241,7 +246,6 @@ var countUnsubscribeHandle = db.collection('count').onSnapshot(snapshot => {
 oscController.open();
 oscController.on("message", function(message, timetag, info) {
     if (message.address == '/bottle/next/' && message.args[0] == 1){
-        console.log('something is starting to work');
         game.startBottlePour(db);
     } else if (message.address == '/bottle/cancel/' && message.args[0] == 1){
         game.cancelBottlePour(db);

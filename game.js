@@ -1,3 +1,5 @@
+var shuffle = require('shuffle-array'); // for memory game
+
 var connect4 = require('./connect4.js');
 
 var FieldValue = require('firebase-admin').firestore.FieldValue;
@@ -50,7 +52,7 @@ exports.resetGameBoard = function (db, force = false){
             if (_force.startOver){
                 // force game to start over at round 1 with a basic (no) game
                 currentCountUpdate = Object.assign(currentCountUpdate, {
-                    game: "basic", round: "1", 
+                    game: "basic", round: "1",
                 });
             }
 
@@ -103,6 +105,8 @@ exports.resetGameBoard = function (db, force = false){
                     3: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
                     4: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
                     archived: [],
+                    currentMove: [],
+                    tokens: ['#ffa3b1', '#f3715a', '#f37b70', '#ffad59', '#ffe599', '#f8fc98', '#b4ffb4', '#00cc99', '#00bcd4', '#03a9f4', '#4848ff', '#6a35ce', '#aa55aa', '#7f7fbf'],
                     movesCount: 0
                 });
             }
@@ -350,7 +354,7 @@ let bottlesColorMap = {
     'red': {
         'primary': {
             'foreground': 'red',
-            'background': 'white'        
+            'background': 'white'
         },
         'alternate': {
             'foreground': 'white',
@@ -360,7 +364,7 @@ let bottlesColorMap = {
     'blue': {
         'primary': {
             'foreground': 'blue',
-            'background': 'white'        
+            'background': 'white'
         },
         'alternate': {
             'foreground': 'white',
@@ -431,7 +435,7 @@ exports.drawBitmap = function(db, bottleMap, colormap, name){
             "event.override": true,
             "skin.override": bottleMap[bottleId] ? colormap.foreground : colormap.background
         });
-        
+
     }
 
     return batch.commit().then(function () {
@@ -448,7 +452,7 @@ exports.flashAnimatedSequence = function(db, animation){
     exports.drawBitmap(db, animation[0].map, animation[0].color, animation[0].name);
     let previousDuration = animation[0].duration;
 
-    // remove first frame as we've already shown it. 
+    // remove first frame as we've already shown it.
     animation.shift();
 
     return animation.reduce((promiseChain, currentTask) => {
@@ -493,7 +497,7 @@ exports.triggerColumnMove = function(db, x_pos){
                     // return;
                 }
 
-                let currentDisplayIds = []; 
+                let currentDisplayIds = [];
                 displayData.forEach(doc => currentDisplayIds.push(doc.id));
 
                 let data = connect4Data.data();
@@ -518,7 +522,7 @@ exports.triggerColumnMove = function(db, x_pos){
                     "skin.override": data.currentPlayer
                 });
 
-                if (gameWon){                    
+                if (gameWon){
                     data['wins'][gameWon.player]++;
                     data['archived'].push({board: JSON.stringify(board), timestamp: new Date()});
 
@@ -663,4 +667,185 @@ exports.sendTicTacToeBottleStatus = function(oscClient, player, x_pos, y_pos, ga
         ]
     });
     }
+}
+
+
+/**
+ * Memory Game Play
+ */
+
+exports.setUpMemoryGame = function(db){
+    return db.runTransaction(function(transaction) {
+        var memoryRef = db.collection("count").doc("memory");
+        // This code may get re-run multiple times if there are conflicts.
+        return transaction.get(memoryRef).then(function(memoryData) {
+            if (!memoryData.exists) return;
+
+            let data = memoryData.data();
+            let board = [data['0'], data['1'], data['2'], data['3'], data['4']];
+
+            // Generate & Shuffle Matches
+            let numberOfMatches = Math.floor(99/data.tokens.length);
+            let offsetMargin = 100 - numberOfMatches*data.tokens.length;
+            let cards = Array.from({ length: numberOfMatches }).fill(data.tokens).flat();
+
+            let shuffledCards = shuffle(cards);
+
+            // parcel into the gameboard
+            board['4'] = shuffledCards.slice(0, 20);
+            board['3'] = shuffledCards.slice(20, 40);
+            board['2'] = shuffledCards.slice(40, 60);
+            board['1'] = shuffledCards.slice(60, 80);
+
+            // first row is special to account for un-even displays.
+            board['0'] = shuffledCards.slice(80);
+            board['0'].unshift(Array.from({ length: offsetMargin }).fill(null));
+            board['0'] = board['0'].flat();
+
+            // Database Update
+            transaction.update(memoryRef, { '0': board['0'], '1': board['1'], '2': board['2'], '3': board['3'], '4': board['4'] });
+
+            let displayRef = db.collection("display");
+            board.forEach(function(row, y_pos){
+                row.forEach(function(card, x_pos){
+                    // cancel skin update if the value is null, as no bottle is displayed there.
+                    if (card === null) return;
+
+                    let bottleId = getConnect4BottleId(x_pos, y_pos);
+
+                    // invalid bottle id
+                    if (bottleId > 99 || bottleId < 1) return;
+
+                    transaction.update(displayRef.doc(bottleId.toString()), {
+                        "event.override": false,
+                        "skin.override": card
+                    });
+                });
+            });
+        });
+    }).catch(function(error) {
+        console.error("Transaction failed: ", error);
+    });
+}
+
+let getBottleCoordinates = function(bottleId){
+    if (bottleId > 99 || bottleId < 1) {
+        console.error(`invalid bottleId passed <${bottleId}>`);
+        return;
+    }
+    return {
+        id: bottleId,
+        x: (100-bottleId) % 20,
+        y: 4 - Math.floor(bottleId / 20)
+    };
+}
+
+exports.triggerMemoryMove = function(db, bottleId, duration=1000){
+    let displayRef = db.collection("display");
+    let memoryRef = db.collection("count").doc("memory");
+
+    return db.runTransaction(function(transaction) {
+        // This code may get re-run multiple times if there are conflicts.
+        return transaction.get(memoryRef).then(function(memoryData) {
+            if (!memoryData.exists) return;
+
+            let data = memoryData.data();
+            let board = [data['0'], data['1'], data['2'], data['3'], data['4']];
+
+            // reveal bottle
+            transaction.update(displayRef.doc(bottleId.toString()), {
+                "event.override": true,
+            });
+
+            let gameTransactionUpdate = {};
+
+            // check if this is the first move
+            if (data.hasOwnProperty('currentMove') && data.currentMove !== undefined){
+                if (data.currentMove.length === 0){
+                    // add bottle to currentMove
+                    gameTransactionUpdate.currentMove = [bottleId,];
+                    transaction.update(memoryRef, gameTransactionUpdate);
+
+                    return {'move': 'inProgress', 'matched': false};
+                } else if (data.currentMove.length === 1){
+                    gameTransactionUpdate.movesCount = data.movesCount + 1;
+
+                    bottle1 = getBottleCoordinates(data.currentMove[0]);
+                    bottle2 = getBottleCoordinates(bottleId);
+
+                    // archive move
+                    data.archived.push({move: gameTransactionUpdate.movesCount, bottles: [bottle1.id, bottle2.id], });
+                    gameTransactionUpdate.archived = data.archived;
+
+                    // clear current move
+                    gameTransactionUpdate.currentMove = [];
+                    transaction.update(memoryRef, gameTransactionUpdate);
+
+                    // check match
+                    if (board[bottle1.y][bottle1.x] == board[bottle2.y][bottle2.x]){
+                        // matched
+                        return {'move': 'complete', 'matched': true, 'bottle1': bottle1, 'bottle2': bottle2};
+                    } else {
+                        // no match
+                        return {'move': 'complete', 'matched': false, 'bottle1': bottle1, 'bottle2': bottle2};
+                    }
+                } else {
+                    throw new Error('more than two moves have been made without clearing the state.');
+                }
+            } else {
+                throw new Error('Unexpected Error: No currentMove key in memory game record.');
+            }
+        });
+    }).then(function (matched){
+        return new Promise((resolve, reject) => {
+            if (matched === Object(matched)) {
+                if (matched.move == 'complete' && !matched.matched){
+                    let wait = setTimeout(() => {
+                        let batch = db.batch();
+                        batch.update(displayRef.doc(matched.bottle1.id.toString()), { "event.override": false });
+                        batch.update(displayRef.doc(matched.bottle2.id.toString()), { "event.override": false });
+
+                        return batch.commit().then(function (){
+                            clearTimeout(wait);
+                            resolve();
+                        });
+                    }, duration);
+                } else {
+                    resolve();
+                }
+            } else {
+                reject(new Error('unexpected return from transaction'));
+            }
+        });
+    }).catch(function(error) {
+        console.error("Transaction failed: ", error);
+    });
+}
+
+exports.teaseMemoryBottle = function(db, duration=1000, bottleId=false){
+    // choose random bottle
+    if (!bottleId){
+        bottleId = Math.floor(Math.random() * 99) + 1;
+    }
+
+    let bottleRef = db.collection("display").doc(bottleId.toString());
+
+    let batch = db.batch();
+    batch.update(bottleRef, { "event.override": true });
+
+    return batch.commit().then(function () {
+        return new Promise((resolve, reject) => {
+            let wait = setTimeout(() => {
+                let batch = db.batch();
+                batch.update(bottleRef, { "event.override": false });
+
+                return batch.commit().then(function (){
+                    clearTimeout(wait);
+                    resolve();
+                });
+            }, duration);
+        });
+    }).catch(function(error) {
+        console.error("Transaction failed: ", error);
+    });
 }
