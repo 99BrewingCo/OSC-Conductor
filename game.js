@@ -5,6 +5,32 @@ var connect4 = require('./connect4.js');
 var FieldValue = require('firebase-admin').firestore.FieldValue;
 
 /**
+ *  General Board Conversions
+ */
+
+let range = function(start, stop){
+    return [...Array(stop).keys()].map(i => i + start);
+}
+
+let getBottleIdFromCoords = function(x_pos, y_pos){
+    x_pos = parseInt(x_pos);
+    y_pos = parseInt(y_pos);
+    return 100 - (y_pos*20 + x_pos);
+}
+
+let getBottleCoordsFromId = function(bottleId){
+    if (bottleId > 99 || bottleId < 1) {
+        console.error(`invalid bottleId passed <${bottleId}>`);
+        return;
+    }
+    return {
+        id: bottleId,
+        x: (100-bottleId) % 20,
+        y: 4 - Math.floor(bottleId / 20)
+    };
+}
+
+/**
  *  Reset's The Game Board
  */
 exports.resetGameBoard = function (db, force = false){
@@ -339,9 +365,6 @@ function switchToTicTacToeUI(oscClient){
  * 2D Bit Map Display
  */
 
-let range = function(start, stop){
-    return [...Array(stop).keys()].map(i => i + start);
-}
 
 let bottlesBitMap = {
     'red': {99:0, 98:0, 97:1, 96:1, 95:1, 94:0, 93:0, 92:1, 91:1, 90:1, 89:1, 88:0, 87:1, 86:1, 85:1, 84:0, 83:0, 82:0, 81:0, 80:0, 79:0, 78:0, 77:1, 76:0, 75:0, 74:1, 73:0, 72:1, 71:0, 70:0, 69:0, 68:0, 67:1, 66:0, 65:0, 64:1, 63:0, 62:0, 61:0, 60:0, 59:0, 58:0, 57:1, 56:1, 55:1, 54:0, 53:0, 52:1, 51:1, 50:1, 49:0, 48:0, 47:1, 46:0, 45:0, 44:1, 43:0, 42:0, 41:0, 40:0, 39:0, 38:0, 37:1, 36:0, 35:1, 34:0, 33:0, 32:1, 31:0, 30:0, 29:0, 28:0, 27:1, 26:0, 25:0, 24:1, 23:0, 22:0, 21:0, 20:0, 19:0, 18:0, 17:1, 16:0, 15:0, 14:1, 13:0, 12:1, 11:1, 10:1, 9:1, 8:0, 7:1, 6:1, 5:1, 4:0, 3:0, 2:0, 1:0},
@@ -476,11 +499,6 @@ exports.flashAnimatedSequence = function(db, animation){
  * Connect 4 Game Play
  */
 
-let getConnect4BottleId = function(x_pos, y_pos){
-    x_pos = parseInt(x_pos);
-    y_pos = parseInt(y_pos);
-    return 100 - (y_pos*20 + x_pos);
-}
 
 exports.triggerColumnMove = function(db, x_pos){
     return db.runTransaction(function(transaction) {
@@ -516,7 +534,7 @@ exports.triggerColumnMove = function(db, x_pos){
 
                 gameTransactionUpdate = { 0: board[0], 1: board[1], 2: board[2], 3: board[3], 4: board[4] };
 
-                let bottleId = getConnect4BottleId(x_pos, y_pos);
+                let bottleId = getBottleIdFromCoords(x_pos, y_pos);
                 transaction.update(db.collection("display").doc(bottleId.toString()), {
                     "event.override": true,
                     "skin.override": data.currentPlayer
@@ -536,7 +554,7 @@ exports.triggerColumnMove = function(db, x_pos){
                         archived: data['archived']
                     };
 
-                    winningBottles = gameWon.coordinates.map(function(value){return getConnect4BottleId(value[0], value[1]);});
+                    winningBottles = gameWon.coordinates.map(function(value){return getBottleIdFromCoords(value[0], value[1]);});
                     lostBottles = currentDisplayIds.filter(function(el){return !winningBottles.includes(parseInt(el));});
 
                     let displayRef = db.collection("display");
@@ -564,7 +582,7 @@ exports.triggerColumnMove = function(db, x_pos){
 }
 
 exports.sendConnect4BottleStatus = function(oscClient, player, x_pos, y_pos){
-    let bottleId = getConnect4BottleId(x_pos, y_pos);
+    let bottleId = getBottleIdFromCoords(x_pos, y_pos);
 
     if (player === null){
         console.log(`      Clearing Connect 4 Bottle at row ${x_pos}, column ${y_pos} at bottle ${bottleId}`);
@@ -711,7 +729,7 @@ exports.setUpMemoryGame = function(db){
                     // cancel skin update if the value is null, as no bottle is displayed there.
                     if (card === null) return;
 
-                    let bottleId = getConnect4BottleId(x_pos, y_pos);
+                    let bottleId = getBottleIdFromCoords(x_pos, y_pos);
 
                     // invalid bottle id
                     if (bottleId > 99 || bottleId < 1) return;
@@ -726,18 +744,6 @@ exports.setUpMemoryGame = function(db){
     }).catch(function(error) {
         console.error("Transaction failed: ", error);
     });
-}
-
-let getBottleCoordinates = function(bottleId){
-    if (bottleId > 99 || bottleId < 1) {
-        console.error(`invalid bottleId passed <${bottleId}>`);
-        return;
-    }
-    return {
-        id: bottleId,
-        x: (100-bottleId) % 20,
-        y: 4 - Math.floor(bottleId / 20)
-    };
 }
 
 exports.triggerMemoryMove = function(db, bottleId, duration=1000){
@@ -770,8 +776,8 @@ exports.triggerMemoryMove = function(db, bottleId, duration=1000){
                 } else if (data.currentMove.length === 1){
                     gameTransactionUpdate.movesCount = data.movesCount + 1;
 
-                    bottle1 = getBottleCoordinates(data.currentMove[0]);
-                    bottle2 = getBottleCoordinates(bottleId);
+                    bottle1 = getBottleCoordsFromId(data.currentMove[0]);
+                    bottle2 = getBottleCoordsFromId(bottleId);
 
                     // archive move
                     data.archived.push({move: gameTransactionUpdate.movesCount, bottles: [bottle1.id, bottle2.id], });
