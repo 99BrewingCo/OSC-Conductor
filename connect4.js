@@ -71,7 +71,6 @@ exports.horizontalWin = function (board, countToWin) {
                 tally = 0;
             }
             if (tally === countToWin - 1) {
-                console.log('tally:', tally);
                 return {'player':currentValue, 'coordinates':coordinates};
             }
             previousValue = currentValue;
@@ -117,7 +116,6 @@ exports.verticalWin = function (board, countToWin) {
                 tally = 0;
             }
             if (tally === countToWin - 1) {
-                console.log('tally:', tally);
                 return {'player':currentValue, 'coordinates':coordinates};
             }
             previousValue = currentValue;
