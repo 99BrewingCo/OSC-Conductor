@@ -209,7 +209,10 @@ exports.startBottlePour = function (db){
     return db.runTransaction(function(transaction) {
         var currentRef = db.collection("count").doc("current");
         return transaction.get(currentRef).then(function(current) {
-            if (!current.exists) return;
+            if (!current.exists) {
+                logger.error(`[resetGameBoard] Missing 'Current' database reference`);
+                return;
+            }
 
             // Update Count
             let data = current.data();
@@ -263,7 +266,10 @@ exports.cancelBottlePour = function (db){
     return db.runTransaction(function(transaction) {
         var currentRef = db.collection("count").doc("current");
         return transaction.get(currentRef).then(function(current) {
-            if (!current.exists) return;
+            if (!current.exists)  {
+                logger.error(`[resetGameBoard] Missing 'Current' database reference`);
+                return;
+            }
 
             let data = current.data();
             if (data.inProgress.length > 0){
@@ -353,7 +359,7 @@ exports.clearName = function(oscClient, bottleId){
 }
 
 exports.sendEmptyBottleStatus = function(oscClient, bottleId){
-    logger.info(`      Sending Empty Bottle Status for Bottle ${bottleId}`);
+    logger.verbose(`      Sending Empty Bottle Status for Bottle ${bottleId}`);
     return sendLedStatus(oscClient, `/bottle/status/${bottleId}`, true);
 }
 
