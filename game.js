@@ -73,9 +73,10 @@ exports.games = {};
 exports.resetGameBoard = function (db, force = false){
     let _force = {
         startOver: false,
+        nextRound: false,
         connect4: false,
         memory: false,
-        ticTacToe: false
+        ticTacToe: false,
     };
 
     // Parcel Force Out
@@ -89,12 +90,13 @@ exports.resetGameBoard = function (db, force = false){
         if (force.hasOwnProperty('memory') && force.memory !== undefined && force.memory){
             _force.memory = true;
         }
-        if (force.hasOwnProperty('ticTacToe') && force.ticTacToe !== undefined && force.ticTacToe){
-            _force.ticTacToe = true;
+        if (force.hasOwnProperty('nextRound') && force.nextRound !== undefined && force.nextRound){
+            _force.nextRound = true;
         }
     } else if (force === true){
         _force = {
             startOver: true,
+            nextRound: false,
             connect4: true,
             memory: true,
             ticTacToe: true
@@ -106,31 +108,38 @@ exports.resetGameBoard = function (db, force = false){
         var currentCountRef = db.collection("count").doc("current");
         return transaction.get(currentCountRef).then(function(currentCount) {
             if (!currentCount.exists) {
+                logger.error(`[resetGameBoard] Missing 'Current' database reference`);
                 return;
             }
+            let currentCountData = currentCount.data();
 
             let currentCountUpdate = {count: 100, inProgress: [], namePending: []};
+
+            let gameRound = parseInt(currentCountData.round);
             if (_force.startOver){
                 // force game to start over at round 1 with a basic (no) game
                 currentCountUpdate = Object.assign(currentCountUpdate, {
-                    game: "basic", round: "1",
+                    game: "basic", round: "0",
+                });
+            } else if (_force.nextRound){
+                // increment game round
+                gameRound++;
+                currentCountUpdate = Object.assign(currentCountUpdate, {
+                    game: currentCountData.schedule[gameRound].game, round: gameRound,
                 });
             }
 
             transaction.update(currentCountRef, currentCountUpdate);
 
             // Fetch New Round Skin Color
-            let currentCountData = currentCount.data();
             let currentSkin = "#eed202"; // critical error color
-            if (currentCountData.schedule[currentCountData.round] !== undefined){
-                let currentRound = parseInt(currentCountData.round);
-                // Correct for Forcing Full Game Reset
-                currentRound = force ? 0 : currentRound;
-                currentSkin = currentCountData.schedule[currentRound].skin;
+            if (currentCountData.schedule[gameRound] !== undefined){
+                currentSkin = currentCountData.schedule[gameRound].skin;
             } else {
                 logger.error(`[resetGameBoard] unknown round <${currentCountData.round}> in schedule, cannot update as requested.`);
             }
 
+            // reset bottles to full
             for (var i = 99; i > 0; i--) {
                 transaction.set(db.collection('display').doc(i.toString()), {
                     number: i.toString(),
@@ -241,7 +250,7 @@ exports.startBottlePour = function (db){
     }).then(function(data) {
         if (data === -1){
             logger.warn("      Final Beer Consumed in Round.");
-            exports.resetGameBoard(db);
+            exports.resetGameBoard(db, {nextRound: true});
         }
         return true;
     }).catch(function(error) {
